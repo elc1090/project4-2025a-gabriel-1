@@ -11,6 +11,7 @@ Flask-Migrate==4.1.0
 Flask-SocketIO==5.5.1
 Flask-SQLAlchemy==3.1.1
 gevent==25.5.1
+google-auth
 greenlet==3.2.2
 gunicorn==23.0.0
 h11==0.16.0

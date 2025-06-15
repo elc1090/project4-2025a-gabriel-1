@@ -3,10 +3,20 @@
     <div class="login-box">
       <h1>Bem-vindo à Lousa Colaborativa</h1>
       <p>Faça login para continuar</p>
-      <button @click="loginWithGoogle" class="google-login-button">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google Logo" />
-        Entrar com Google
-      </button>
+      <div id="g_id_onload"
+           :data-client_id="googleClientId"
+           :data-callback="handleGoogleSignIn"
+           data-auto_select="false">
+      </div>
+      <div class="g_id_signin"
+           data-type="standard"
+           data-size="large"
+           data-theme="outline"
+           data-text="sign_in_with"
+           data-shape="rectangular"
+           data-logo_alignment="left">
+      </div>
+      <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
     </div>
   </div>
 </template>
@@ -14,11 +24,50 @@
 <script>
 export default {
   name: 'Login',
+  data() {
+    return {
+      errorMessage: '',
+      googleClientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+    };
+  },
   methods: {
-    loginWithGoogle() {
-      // A funcionalidade de login será implementada futuramente
-      console.log('Tentativa de login com Google');
+    async handleGoogleSignIn(response) {
+      console.log("Recebida credencial do Google:", response.credential);
+      this.errorMessage = '';
+      try {
+        const res = await fetch('/api/auth/google', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ credential: response.credential }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.message || 'Falha no login');
+        }
+
+        console.log('Login no backend bem-sucedido:', data.user);
+        this.$emit('login-success', data.user);
+      } catch (error) {
+        console.error('Erro ao fazer login:', error);
+        this.errorMessage = `Erro: ${error.message}. Verifique o console para mais detalhes.`;
+      }
     }
+  },
+  mounted() {
+    if (!this.googleClientId) {
+        console.error("VITE_GOOGLE_CLIENT_ID não está definida no frontend.");
+        this.errorMessage = "Erro de configuração do cliente. O login não funcionará.";
+    }
+    
+    // O script do Google é carregado de forma assíncrona.
+    // O objeto 'google' pode não estar disponível imediatamente.
+    // O ideal seria uma abordagem mais robusta que espera o script carregar.
+    // Mas para este caso, o script no index.html com 'defer' deve funcionar na maioria das vezes.
+    window.handleGoogleSignIn = this.handleGoogleSignIn;
   }
 };
 </script>
@@ -50,29 +99,8 @@ p {
   color: #666;
 }
 
-.google-login-button {
-  display: inline-flex;
-  align-items: center;
-  padding: 10px 20px;
-  border: none;
-  border-radius: 4px;
-  background-color: #4285F4;
-  color: white;
-  font-size: 16px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-
-.google-login-button:hover {
-  background-color: #357ae8;
-}
-
-.google-login-button img {
-  width: 20px;
-  height: 20px;
-  margin-right: 10px;
-  background-color: white;
-  border-radius: 50%;
-  padding: 2px;
+.error-message {
+  color: #D8000C; /* Vermelho para erro */
+  margin-top: 15px;
 }
 </style> 

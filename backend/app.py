@@ -9,6 +9,9 @@ import os
 import datetime
 import json
 
+from google.oauth2 import id_token
+from google.auth.transport import requests
+
 app = Flask(__name__)
 
 env_cors_str = os.environ.get('CORS_ALLOWED_ORIGINS')
@@ -33,6 +36,18 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 socketio = SocketIO(app, cors_allowed_origins=cors_config, async_mode='gevent')
+
+class User(db.Model):
+    __tablename__ = 'users'
+
+    id = db.Column(db.String(255), primary_key=True) # Google's user ID
+    name = db.Column(db.String(255), nullable=False)
+    email = db.Column(db.String(255), unique=True, nullable=False)
+    profile_pic = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+
+    def __repr__(self):
+        return f'<User id={self.id} name={self.name}>'
 
 class DrawingBoard(db.Model):
     __tablename__ = 'drawing_board'
@@ -163,6 +178,65 @@ def handle_clear_canvas_event(data): # data pode ser vazio ou conter board_id
         db.session.rollback()
         print(f"Erro ao limpar traços do banco de dados: {e}")
         
+
+@app.route('/api/auth/google', methods=['POST'])
+def google_auth():
+    data = request.get_json()
+    token = data.get('credential')
+    client_id = os.environ.get('GOOGLE_CLIENT_ID')
+
+    if not token:
+        return jsonify({"message": "Missing token"}), 400
+    
+    if not client_id:
+        print("ERRO: Variável de ambiente GOOGLE_CLIENT_ID não definida no backend.")
+        return jsonify({"message": "Server configuration error"}), 500
+
+    try:
+        # Verificar o token com o Google
+        idinfo = id_token.verify_oauth2_token(token, requests.Request(), client_id)
+
+        # Extrair informações do usuário
+        user_id = idinfo['sub']
+        user_email = idinfo['email']
+        user_name = idinfo['name']
+        user_picture = idinfo['picture']
+
+        # Verificar se o usuário existe ou criar um novo
+        user = User.query.get(user_id)
+        if not user:
+            user = User(
+                id=user_id,
+                email=user_email,
+                name=user_name,
+                profile_pic=user_picture
+            )
+            db.session.add(user)
+            db.session.commit()
+            print(f"Novo usuário criado: {user_name} ({user_email})")
+        else:
+            print(f"Usuário existente logado: {user.name} ({user.email})")
+
+        # Futuramente, poderíamos gerar um token JWT aqui para sessões seguras
+        return jsonify({
+            "message": "Login successful",
+            "user": {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "profile_pic": user.profile_pic
+            }
+        })
+
+    except ValueError as e:
+        # O token pode ser inválido
+        print(f"Erro de verificação de token: {e}")
+        return jsonify({"message": "Invalid token"}), 401
+    except Exception as e:
+        print(f"Erro inesperado durante a autenticação: {e}")
+        db.session.rollback()
+        return jsonify({"message": "An unexpected error occurred"}), 500
+
 
 if __name__ == '__main__':
     print("Iniciando servidor Flask-SocketIO com Eventlet...")
