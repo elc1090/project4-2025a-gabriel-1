@@ -3,19 +3,7 @@
     <div class="login-box">
       <h1>Bem-vindo à Lousa Colaborativa</h1>
       <p>Faça login para continuar</p>
-      <div id="g_id_onload"
-           :data-client_id="googleClientId"
-           :data-callback="handleGoogleSignIn"
-           data-auto_select="false">
-      </div>
-      <div class="g_id_signin"
-           data-type="standard"
-           data-size="large"
-           data-theme="outline"
-           data-text="sign_in_with"
-           data-shape="rectangular"
-           data-logo_alignment="left">
-      </div>
+      <div ref="googleLoginButton"></div>
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
     </div>
   </div>
@@ -72,13 +60,27 @@ export default {
     if (!this.googleClientId) {
         console.error("VITE_GOOGLE_CLIENT_ID não está definida no frontend.");
         this.errorMessage = "Erro de configuração do cliente. O login não funcionará.";
+        return;
     }
     
-    // O script do Google é carregado de forma assíncrona.
-    // O objeto 'google' pode não estar disponível imediatamente.
-    // O ideal seria uma abordagem mais robusta que espera o script carregar.
-    // Mas para este caso, o script no index.html com 'defer' deve funcionar na maioria das vezes.
-    window.handleGoogleSignIn = this.handleGoogleSignIn;
+    const checkGoogle = () => {
+      if (window.google) {
+        console.log('Google GSI Sdk está pronto.');
+        window.google.accounts.id.initialize({
+          client_id: this.googleClientId,
+          callback: this.handleGoogleSignIn
+        });
+        window.google.accounts.id.renderButton(
+          this.$refs.googleLoginButton,
+          { theme: "outline", size: "large", text:"sign_in_with", shape:"rectangular", logo_alignment: "left" }
+        );
+      } else {
+        console.log('Google GSI Sdk ainda não está pronto, tentando novamente em 100ms.');
+        setTimeout(checkGoogle, 100);
+      }
+    };
+
+    checkGoogle();
   }
 };
 </script>
