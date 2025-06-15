@@ -1,11 +1,11 @@
 <template>
   <div id="app-container">
-    <DrawingCanvas />
+    <Login />
   </div>
 </template>
 
 <script setup>
-import DrawingCanvas from './components/DrawingCanvas.vue';
+import Login from './components/Login.vue';
 </script>
 
 <style>
