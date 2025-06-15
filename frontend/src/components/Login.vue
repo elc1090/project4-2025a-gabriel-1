@@ -68,7 +68,10 @@ export default {
         console.log('Google GSI Sdk está pronto.');
         window.google.accounts.id.initialize({
           client_id: this.googleClientId,
-          callback: this.handleGoogleSignIn
+          callback: (response) => {
+            console.log("--- DEBUG: Google Callback Executado ---");
+            this.handleGoogleSignIn(response);
+          }
         });
         window.google.accounts.id.renderButton(
           this.$refs.googleLoginButton,
