@@ -2,7 +2,7 @@
 
 <img src="preview.gif" alt="desktop preview" width="720"/>
 
-Acesso: [https://elc1090.github.io/project3-2025a-gabriel/](https://elc1090.github.io/project3-2025a-gabriel/)
+Acesso: [https://elc1090.github.io/project4-2025a-gabriel-1/](https://elc1090.github.io/project4-2025a-gabriel-1/)
 
 
 ### Desenvolvedor
