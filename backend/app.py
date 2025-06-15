@@ -5,6 +5,7 @@ from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_socketio import SocketIO, emit, join_room, leave_room
+from flask_cors import CORS
 import os
 import datetime
 import json
@@ -25,6 +26,8 @@ elif env_cors_str:
 else:
     cors_config = ["https://elc1090.github.io"]
     print(f"CORS: Variável de ambiente CORS_ALLOWED_ORIGINS não definida. Usando fallback: {cors_config}")
+
+CORS(app, origins=cors_config, supports_credentials=True)
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
