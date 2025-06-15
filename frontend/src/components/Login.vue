@@ -34,8 +34,19 @@ export default {
     async handleGoogleSignIn(response) {
       console.log("Recebida credencial do Google:", response.credential);
       this.errorMessage = '';
+      
+      const backendUrl = import.meta.env.VITE_BACKEND_URL;
+      if (!backendUrl) {
+          this.errorMessage = "A URL do backend não está configurada no frontend.";
+          console.error("VITE_BACKEND_URL não está definida.");
+          return;
+      }
+      
       try {
-        const res = await fetch('/api/auth/google', {
+        const apiUrl = `${backendUrl}/api/auth/google`;
+        console.log(`Enviando solicitação para: ${apiUrl}`);
+        
+        const res = await fetch(apiUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
