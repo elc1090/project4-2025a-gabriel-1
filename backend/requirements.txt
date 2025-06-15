@@ -24,6 +24,7 @@ psycopg2-binary==2.9.10
 pycparser==2.22
 python-engineio==4.12.1
 python-socketio==5.13.0
+requests
 setuptools==80.8.0
 simple-websocket==1.1.0
 SQLAlchemy==2.0.41
