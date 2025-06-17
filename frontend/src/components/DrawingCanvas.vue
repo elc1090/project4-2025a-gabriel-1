@@ -1,23 +1,30 @@
 <template>
-  <canvas
-    ref="viewportCanvasRef"
-    @mousedown="handleMouseDown"
-    @mousemove="handleMouseMove"
-    @mouseup="handleMouseUpOrOut"
-    @mouseout="handleMouseUpOrOut"
-    @wheel.prevent="handleWheel"
-    @touchstart.prevent="handleTouchStart"
-    @touchmove.prevent="handleTouchMove"
-    @touchend="handleTouchEnd"
-    @contextmenu.prevent="showContextMenu"
-    class="viewport-canvas"
-  ></canvas>
-  <ContextMenu
-    v-if="menu.visible"
-    :x="menu.x"
-    :y="menu.y"
-    @select="handleMenuSelection"
-  />
+  <div class="canvas-container">
+    <canvas
+      ref="viewportCanvasRef"
+      @mousedown="handleMouseDown"
+      @mousemove="handleMouseMove"
+      @mouseup="handleMouseUpOrOut"
+      @mouseout="handleMouseUpOrOut"
+      @wheel.prevent="handleWheel"
+      @touchstart.prevent="handleTouchStart"
+      @touchmove.prevent="handleTouchMove"
+      @touchend="handleTouchEnd"
+      @contextmenu.prevent="showContextMenu"
+      class="viewport-canvas"
+    ></canvas>
+    <ContextMenu
+      v-if="menu.visible"
+      :x="menu.x"
+      :y="menu.y"
+      @select="handleMenuSelection"
+    />
+    <button @click="toggleMenu" class="menu-button">☰</button>
+    <div v-if="isMenuOpen" class="placeholder-menu">
+      <!-- O conteúdo do menu virá aqui -->
+      <p>Menu Placeholder</p>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -55,6 +62,8 @@ const drawingSettings = reactive({
   color: 'black',
   lineWidth: 3,
 });
+
+const isMenuOpen = ref(false);
 
 const menu = reactive({
   visible: false,
@@ -591,16 +600,76 @@ function handleMenuSelection(action, value) {
       break;
   }
 }
+
+function toggleMenu() {
+  isMenuOpen.value = !isMenuOpen.value;
+}
 </script>
 
 <style scoped>
+.canvas-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #333; /* Cor de fundo para o container */
+}
+
 .viewport-canvas {
-  border: 1px solid #505050;
+  /* O canvas já é redimensionado via JS, então não precisa de w/h aqui */
+  border: 2px solid #444;
+  box-shadow: 0 0 10px rgba(0,0,0,0.5);
   cursor: crosshair;
-  background-color: #777;
   display: block;
   touch-action: none;
-  box-shadow: 0 0 10px rgba(0,0,0,0.3);
-  margin: auto;
+}
+
+.menu-button {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 100; /* Mais alto para garantir que fique sobre tudo */
+  padding: 8px 12px;
+  font-size: 24px; /* Maior para ser mais fácil de tocar */
+  line-height: 1;
+  background-color: rgba(255, 255, 255, 0.9);
+  color: #333;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  transition: background-color 0.2s, box-shadow 0.2s;
+  -webkit-tap-highlight-color: transparent; /* Remove o destaque de toque em mobile */
+}
+
+.menu-button:hover, .menu-button:focus {
+  background-color: #fff;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+  outline: none;
+}
+
+.placeholder-menu {
+  position: absolute;
+  top: 70px; /* Abaixo do botão do menu */
+  left: 20px;
+  z-index: 100;
+  width: 250px;
+  padding: 15px;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.placeholder-menu p {
+  margin: 0;
+  font-size: 16px;
+  color: #555;
 }
 </style>
