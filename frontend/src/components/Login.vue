@@ -36,7 +36,7 @@ const handleGoogleSignIn = async (response) => {
     // A URL da API deve ser a URL do seu backend, que pode estar rodando localmente ou em um servidor.
     // Usar um caminho relativo /api/auth/google só funciona se o servidor de desenvolvimento do Vite (ou um servidor web de produção)
     // estiver configurado para fazer proxy das requisições para o backend Flask.
-    const apiUrl = import.meta.env.VITE_API_URL || ''; // Use a variável de ambiente ou um caminho relativo
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://project3-2025a-gabriel.onrender.com'; // Use a variável de ambiente ou um caminho relativo
     const res = await fetch(`${apiUrl}/api/auth/google`, {
       method: 'POST',
       headers: {

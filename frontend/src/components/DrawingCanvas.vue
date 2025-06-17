@@ -125,7 +125,7 @@ onMounted(() => {
   setupViewportAndWorld();
   window.addEventListener('resize', setupViewportAndWorld);
 
-  const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const backendUrl = import.meta.env.VITE_API_URL || 'https://project3-2025a-gabriel.onrender.com';
   socket.value = io(backendUrl, {
     transports: ['websocket', 'polling']
   });
