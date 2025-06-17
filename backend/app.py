@@ -5,6 +5,7 @@ from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_socketio import SocketIO, emit, join_room, leave_room
+from flask_cors import CORS
 import os
 import datetime
 import json
@@ -32,6 +33,9 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL or f'sqlite:///{os.path.join(app.instance_path, "desenho_local.db")}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Configura o CORS para todas as rotas da aplicação Flask
+CORS(app, origins=cors_config, supports_credentials=True)
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
