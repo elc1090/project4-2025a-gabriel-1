@@ -5,7 +5,7 @@
       <p>Faça login para continuar</p>
       <div id="g_id_onload"
            :data-client_id="googleClientId"
-           :data-callback="handleGoogleSignIn"
+           data-callback="handleGoogleSignIn"
            data-auto_select="false">
       </div>
       <div class="g_id_signin"
@@ -63,11 +63,12 @@ export default {
         this.errorMessage = "Erro de configuração do cliente. O login não funcionará.";
     }
     
-    // O script do Google é carregado de forma assíncrona.
-    // O objeto 'google' pode não estar disponível imediatamente.
-    // O ideal seria uma abordagem mais robusta que espera o script carregar.
-    // Mas para este caso, o script no index.html com 'defer' deve funcionar na maioria das vezes.
+    // Anexa a função de callback à `window` para que o script do Google possa chamá-la.
     window.handleGoogleSignIn = this.handleGoogleSignIn;
+  },
+  beforeUnmount() {
+    // Limpa a função da `window` quando o componente for destruído para evitar vazamentos de memória.
+    delete window.handleGoogleSignIn;
   }
 };
 </script>
