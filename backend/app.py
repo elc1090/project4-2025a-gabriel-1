@@ -5,7 +5,6 @@ from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_socketio import SocketIO, emit, join_room, leave_room
-from flask_cors import CORS
 import os
 import datetime
 import json
@@ -27,8 +26,6 @@ else:
     cors_config = ["https://elc1090.github.io"]
     print(f"CORS: Variável de ambiente CORS_ALLOWED_ORIGINS não definida. Usando fallback: {cors_config}")
 
-CORS(app, origins=cors_config, supports_credentials=True)
-
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
@@ -40,6 +37,12 @@ db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 socketio = SocketIO(app, cors_allowed_origins=cors_config, async_mode='gevent')
 
+# Tabela de associação para o acesso do usuário aos quadros
+whiteboard_access = db.Table('whiteboard_access',
+    db.Column('user_id', db.String(255), db.ForeignKey('users.id'), primary_key=True),
+    db.Column('whiteboard_id', db.Integer, db.ForeignKey('whiteboards.id'), primary_key=True)
+)
+
 class User(db.Model):
     __tablename__ = 'users'
 
@@ -49,26 +52,31 @@ class User(db.Model):
     profile_pic = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
+    owned_whiteboards = db.relationship('Whiteboard', backref='owner', lazy='dynamic')
+    accessible_whiteboards = db.relationship('Whiteboard', secondary=whiteboard_access, back_populates='accessible_by_users', lazy='dynamic')
+
     def __repr__(self):
         return f'<User id={self.id} name={self.name}>'
 
-class DrawingBoard(db.Model):
-    __tablename__ = 'drawing_board'
+class Whiteboard(db.Model):
+    __tablename__ = 'whiteboards'
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=True, unique=True)
+    nickname = db.Column(db.String(100), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    owner_id = db.Column(db.String(255), db.ForeignKey('users.id'), nullable=False)
     
-    strokes = db.relationship('Stroke', backref='board', lazy=True, cascade="all, delete-orphan")
+    strokes = db.relationship('Stroke', backref='whiteboard', lazy=True, cascade="all, delete-orphan")
+    accessible_by_users = db.relationship('User', secondary=whiteboard_access, back_populates='accessible_whiteboards', lazy='dynamic')
 
     def __repr__(self):
-        return f'<DrawingBoard id={self.id} name={self.name}>'
+        return f'<Whiteboard id={self.id} nickname={self.nickname}>'
 
 class Stroke(db.Model):
     __tablename__ = 'stroke' # Nome explícito da tabela
 
     id = db.Column(db.Integer, primary_key=True)
-    drawing_board_id = db.Column(db.Integer, db.ForeignKey('drawing_board.id'), nullable=False)
+    whiteboard_id = db.Column(db.Integer, db.ForeignKey('whiteboards.id'), nullable=False)
     
     color = db.Column(db.String(7), nullable=False) # Ex: #RRGGBB
     line_width = db.Column(db.Float, nullable=False)
@@ -78,11 +86,32 @@ class Stroke(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow) # Quando o traço foi concluído/salvo
 
     def __repr__(self):
-        return f'<Stroke id={self.id} board_id={self.drawing_board_id} color={self.color}>'
+        return f'<Stroke id={self.id} board_id={self.whiteboard_id} color={self.color}>'
+
+@app.cli.command("ensure_default_whiteboard")
+def ensure_default_whiteboard():
+    """Garante que a lousa padrão (ID 1) exista."""
+    default_board = Whiteboard.query.get(1)
+    if not default_board:
+        # Tenta encontrar um usuário para ser o "dono" inicial.
+        # Pode ser o primeiro usuário do sistema ou um usuário admin específico.
+        # Se nenhum usuário existir, a criação falhará, o que é esperado.
+        first_user = User.query.first()
+        if not first_user:
+            print("Nenhum usuário no banco de dados. Não é possível criar a lousa padrão sem um dono.")
+            print("Crie um usuário primeiro e depois rode este comando novamente.")
+            return
+            
+        default_board = Whiteboard(id=1, nickname="Lousa Principal", owner_id=first_user.id)
+        db.session.add(default_board)
+        db.session.commit()
+        print(f"Lousa padrão criada com ID 1 e proprietário {first_user.email}.")
+    else:
+        print("Lousa padrão (ID 1) já existe.")
 
 @app.route('/')
 def home():
-    return "Backend Flask com SQLAlchemy e modelos DrawingBoard/Stroke."
+    return "Backend Flask com SQLAlchemy e modelos Whiteboard/Stroke."
 
 @app.route('/api/status')
 def status_api():
@@ -97,14 +126,37 @@ DEFAULT_BOARD_ID = 1
 
 @socketio.on('connect')
 def handle_connect():
-    """Chamado quando um cliente se conecta."""
-    room = str(DEFAULT_BOARD_ID)
-    join_room(room)
-    print(f"Cliente {request.sid} conectado e entrou na sala {room}")
+    """Chamado quando um cliente se conecta, mas não entra em nenhuma sala de lousa ainda."""
+    print(f"Cliente {request.sid} conectado ao servidor.")
     emit('connection_established', {'message': 'Conectado ao servidor Socket.IO!', 'sid': request.sid})
 
+@socketio.on('join_board')
+def handle_join_board(data):
+    """Chamado quando um cliente quer se juntar a uma lousa específica."""
+    board_id = data.get('board_id')
+    user_email = data.get('user_email') # O frontend precisa enviar o email do usuário
+
+    if not board_id or not user_email:
+        print(f"Tentativa de join sem board_id ou user_email pelo cliente {request.sid}")
+        return
+        
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        print(f"Usuário com email {user_email} não encontrado.")
+        return
+
+    board = Whiteboard.query.get(board_id)
+    # Verifica se o usuário tem acesso à lousa
+    if not board or user not in board.accessible_by_users:
+        print(f"Usuário {user_email} sem acesso à lousa {board_id} ou lousa inexistente.")
+        # Poderíamos emitir um erro de volta para o cliente aqui
+        return
+
+    room = f"board_{board_id}"
+    join_room(room)
+    print(f"Cliente {request.sid} (usuário {user_email}) entrou na sala {room}")
+
     try:
-        board = db.session.get(DrawingBoard, DEFAULT_BOARD_ID)
         if board:
             existing_strokes_data = []
             for stroke_model in board.strokes:
@@ -116,11 +168,12 @@ def handle_connect():
                 })
             emit('initial_drawing', {'strokes': existing_strokes_data})
         else:
-            print(f"Quadro {DEFAULT_BOARD_ID} não encontrado. Enviando desenho inicial vazio.")
+            # Este caso não deve acontecer por causa da verificação acima, mas por segurança...
+            print(f"Lousa {board_id} não encontrada. Enviando desenho inicial vazio.")
             emit('initial_drawing', {'strokes': []})
 
     except Exception as e:
-        print(f"Erro ao buscar/enviar dados iniciais do desenho: {e}")
+        print(f"Erro ao buscar/enviar dados iniciais do desenho para a lousa {board_id}: {e}")
         emit('initial_drawing', {'strokes': []})
 
 
@@ -134,52 +187,139 @@ def handle_disconnect():
 @socketio.on('draw_stroke_event')
 def handle_draw_stroke_event(data):
     """Recebe um traço completo do cliente e o retransmite para outros na mesma sala."""
-    # 'data' deve conter: { color: '...', lineWidth: ..., points: [{x,y}, ...] }
-    # lineWidth aqui é a espessura no "mundo"
-    print(f"Evento de desenho recebido: {data.get('color')}, {len(data.get('points', []))} pontos")
+    board_id = data.get('board_id')
+    if not board_id:
+        print("Evento de desenho recebido sem 'board_id'. Ignorando.")
+        return
+
+    print(f"Evento de desenho recebido para lousa {board_id}: {data.get('color')}, {len(data.get('points', []))} pontos")
     
-    room = str(DEFAULT_BOARD_ID)
+    room = f"board_{board_id}"
     emit('stroke_received', data, room=room, include_self=False)
 
     try:
-        board = db.session.get(DrawingBoard, DEFAULT_BOARD_ID)
+        board = db.session.get(Whiteboard, board_id)
         if not board:
-            print(f"Quadro {DEFAULT_BOARD_ID} não encontrado, criando...")
-            board = DrawingBoard(id=DEFAULT_BOARD_ID, name="Quadro Principal")
-            db.session.add(board)
+            print(f"Lousa {board_id} não encontrada, não foi possível salvar o traço.")
+            return
 
         new_stroke = Stroke(
-            drawing_board_id=board.id,
+            whiteboard_id=board.id,
             color=data['color'],
             line_width=data['lineWidth'],
             points_json=json.dumps(data['points'])
         )
         db.session.add(new_stroke)
         db.session.commit()
-        print(f"Traço salvo no BD com ID: {new_stroke.id}")
+        print(f"Traço salvo no BD com ID {new_stroke.id} para a lousa {board.id}")
     except Exception as e:
         db.session.rollback()
         print(f"Erro ao salvar traço no banco de dados: {e}")
 
 
 @socketio.on('clear_canvas_event')
-def handle_clear_canvas_event(data): # data pode ser vazio ou conter board_id
-    """Recebe um evento para limpar o canvas e retransmite."""
-    room = str(DEFAULT_BOARD_ID)
+def handle_clear_canvas_event(data):
+    """Recebe um evento para limpar o canvas de uma lousa específica e retransmite."""
+    board_id = data.get('board_id')
+    if not board_id:
+        print("Evento para limpar canvas recebido sem 'board_id'. Ignorando.")
+        return
+        
+    room = f"board_{board_id}"
     print(f"Evento para limpar canvas recebido para a sala {room}")
-    emit('canvas_cleared', room=room, include_self=False) # Avisa outros clientes
+    emit('canvas_cleared', { 'board_id': board_id }, room=room, include_self=False) # Avisa outros clientes
 
     try:
-        board = db.session.get(DrawingBoard, DEFAULT_BOARD_ID)
+        board = db.session.get(Whiteboard, board_id)
         if board:
-            Stroke.query.filter_by(drawing_board_id=board.id).delete()
+            Stroke.query.filter_by(whiteboard_id=board.id).delete()
             db.session.commit()
-            print(f"Traços do quadro {board.id} removidos do banco de dados.")
+            print(f"Traços da lousa {board.id} removidos do banco de dados.")
         else:
-            print(f"Quadro {DEFAULT_BOARD_ID} não encontrado para limpar traços.")
+            print(f"Lousa {board_id} não encontrada para limpar traços.")
     except Exception as e:
         db.session.rollback()
         print(f"Erro ao limpar traços do banco de dados: {e}")
+
+# API para Lousas
+@app.route('/api/whiteboards', methods=['GET'])
+def get_whiteboards():
+    user_email = request.args.get('email')
+    if not user_email:
+        return jsonify({"message": "Parâmetro 'email' é obrigatório"}), 400
+
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        return jsonify({"message": "Usuário não encontrado"}), 404
+
+    boards = user.accessible_whiteboards.order_by(Whiteboard.created_at.asc()).all()
+    
+    boards_data = [{
+        'id': board.id,
+        'nickname': board.nickname,
+        'owner_id': board.owner_id,
+        'is_owner': board.owner_id == user.id
+    } for board in boards]
+
+    return jsonify(boards_data)
+
+@app.route('/api/whiteboards', methods=['POST'])
+def create_whiteboard():
+    data = request.get_json()
+    nickname = data.get('nickname')
+    user_email = data.get('email')
+
+    if not nickname or not user_email:
+        return jsonify({"message": "Apelido ('nickname') e email do usuário são obrigatórios"}), 400
+
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        return jsonify({"message": "Usuário proprietário não encontrado"}), 404
+
+    new_board = Whiteboard(
+        nickname=nickname,
+        owner_id=user.id
+    )
+    # Adiciona o criador à lista de acesso
+    new_board.accessible_by_users.append(user)
+    
+    db.session.add(new_board)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Lousa criada com sucesso!",
+        "whiteboard": {
+            'id': new_board.id,
+            'nickname': new_board.nickname,
+            'owner_id': new_board.owner_id,
+            'is_owner': True
+        }
+    }), 201
+
+@app.route('/api/whiteboards/<int:board_id>', methods=['DELETE'])
+def delete_whiteboard(board_id):
+    user_email = request.args.get('email')
+    if not user_email:
+        return jsonify({"message": "Parâmetro 'email' é obrigatório para autenticação"}), 400
+    
+    if board_id == 1:
+        return jsonify({"message": "A lousa principal não pode ser deletada."}), 403
+
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        return jsonify({"message": "Usuário não encontrado"}), 404
+        
+    board = Whiteboard.query.get(board_id)
+    if not board:
+        return jsonify({"message": "Lousa não encontrada"}), 404
+
+    if board.owner_id != user.id:
+        return jsonify({"message": "Apenas o dono pode deletar a lousa"}), 403
+
+    db.session.delete(board)
+    db.session.commit()
+
+    return jsonify({"message": f"Lousa '{board.nickname}' deletada com sucesso."})
         
 
 @app.route('/api/auth/google', methods=['POST'])
@@ -215,9 +355,18 @@ def google_auth():
                 profile_pic=user_picture
             )
             db.session.add(user)
+            # Dando acesso à lousa padrão para novos usuários
+            default_board = Whiteboard.query.get(DEFAULT_BOARD_ID)
+            if default_board:
+                user.accessible_whiteboards.append(default_board)
             db.session.commit()
             print(f"Novo usuário criado: {user_name} ({user_email})")
         else:
+            # Garante que usuários existentes também tenham acesso
+            default_board = Whiteboard.query.get(DEFAULT_BOARD_ID)
+            if default_board and default_board not in user.accessible_whiteboards:
+                user.accessible_whiteboards.append(default_board)
+                db.session.commit()
             print(f"Usuário existente logado: {user.name} ({user.email})")
 
         # Futuramente, poderíamos gerar um token JWT aqui para sessões seguras

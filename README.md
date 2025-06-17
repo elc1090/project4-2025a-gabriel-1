@@ -15,11 +15,11 @@ Aplicação web de desenho compartilhado em tempo real, permite que múltiplos u
 
 Funcionalidades principais incluem:
 
-  - Autenticação de usuários via Google Sign-In para acessar a lousa.  
   - Uma tela de desenho interativa com capacidade de arrastar (pan) e aplicar zoom, acessível tanto por mouse quanto por gestos de toque (um dedo para desenhar, dois dedos para zoom/pan).  
   - Ferramentas de desenho com seleção de cor (através de uma paleta) e espessura do pincel.  
   - Um menu de contexto customizado, ativado por clique direito no desktop ou toque longo em dispositivos móveis, oferecendo opções para limpar o desenho e resetar a visualização.
   - Persistência dos desenhos, que são salvos no banco de dados e recarregados quando um usuário acessa ou atualiza a página.
+  - Acesso aberto (sem necessidade de login).
 
 
 ### Desenvolvimento
@@ -39,7 +39,6 @@ Houve etapas significativas de depuração e refinamento, especialmente para:
 - [Vue.js](https://vuejs.org/)
 - [Vite](https://vitejs.dev/)
 - [Socket.IO Client](https://socket.io/docs/v4/client-api/)
-- [Google Sign-In for Websites](https://developers.google.com/identity/gsi/web)
 
 **Backend:**
 - [Flask](https://flask.palletsprojects.com/)
@@ -47,8 +46,6 @@ Houve etapas significativas de depuração e refinamento, especialmente para:
 - [SQLAlchemy](https://www.sqlalchemy.org/)
 - [Flask-SQLAlchemy](https://flask-sqlalchemy.palletsprojects.com/)
 - [Flask-Migrate](https://flask-migrate.readthedocs.io/)
-- [Flask-Cors](https://flask-cors.corydolphin.com/)
-- [google-auth](https://google-auth.readthedocs.io/) (para verificação de tokens do Google)
 - [psycopg2](https://www.psycopg.org/)
 - [Gunicorn](https://gunicorn.org/)
 - [gevent](http://www.gevent.org/)
@@ -62,7 +59,8 @@ Houve etapas significativas de depuração e refinamento, especialmente para:
 
 #### Ambiente de desenvolvimento
 
-- [Cursor](https://www.cursor.com/)    
+- [Vscode](https://code.visualstudio.com/)   
+- [VScode Live Preview](https://marketplace.visualstudio.com/items?itemName=ms-vscode.live-server)   
 
 #### Referências e créditos
 

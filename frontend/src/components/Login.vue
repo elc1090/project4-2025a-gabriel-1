@@ -3,7 +3,19 @@
     <div class="login-box">
       <h1>Bem-vindo à Lousa Colaborativa</h1>
       <p>Faça login para continuar</p>
-      <div ref="googleLoginButton"></div>
+      <div id="g_id_onload"
+           :data-client_id="googleClientId"
+           :data-callback="handleGoogleSignIn"
+           data-auto_select="false">
+      </div>
+      <div class="g_id_signin"
+           data-type="standard"
+           data-size="large"
+           data-theme="outline"
+           data-text="sign_in_with"
+           data-shape="rectangular"
+           data-logo_alignment="left">
+      </div>
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
     </div>
   </div>
@@ -22,19 +34,8 @@ export default {
     async handleGoogleSignIn(response) {
       console.log("Recebida credencial do Google:", response.credential);
       this.errorMessage = '';
-      
-      const backendUrl = import.meta.env.VITE_BACKEND_URL;
-      if (!backendUrl) {
-          this.errorMessage = "A URL do backend não está configurada no frontend.";
-          console.error("VITE_BACKEND_URL não está definida.");
-          return;
-      }
-      
       try {
-        const apiUrl = `${backendUrl}/api/auth/google`;
-        console.log(`Enviando solicitação para: ${apiUrl}`);
-        
-        const res = await fetch(apiUrl, {
+        const res = await fetch('/api/auth/google', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -60,30 +61,13 @@ export default {
     if (!this.googleClientId) {
         console.error("VITE_GOOGLE_CLIENT_ID não está definida no frontend.");
         this.errorMessage = "Erro de configuração do cliente. O login não funcionará.";
-        return;
     }
     
-    const checkGoogle = () => {
-      if (window.google) {
-        console.log('Google GSI Sdk está pronto.');
-        window.google.accounts.id.initialize({
-          client_id: this.googleClientId,
-          callback: (response) => {
-            console.log("--- DEBUG: Google Callback Executado ---");
-            this.handleGoogleSignIn(response);
-          }
-        });
-        window.google.accounts.id.renderButton(
-          this.$refs.googleLoginButton,
-          { theme: "outline", size: "large", text:"sign_in_with", shape:"rectangular", logo_alignment: "left" }
-        );
-      } else {
-        console.log('Google GSI Sdk ainda não está pronto, tentando novamente em 100ms.');
-        setTimeout(checkGoogle, 100);
-      }
-    };
-
-    checkGoogle();
+    // O script do Google é carregado de forma assíncrona.
+    // O objeto 'google' pode não estar disponível imediatamente.
+    // O ideal seria uma abordagem mais robusta que espera o script carregar.
+    // Mas para este caso, o script no index.html com 'defer' deve funcionar na maioria das vezes.
+    window.handleGoogleSignIn = this.handleGoogleSignIn;
   }
 };
 </script>
@@ -94,21 +78,15 @@ export default {
   justify-content: center;
   align-items: center;
   height: 100vh;
-  width: 100vw; /* Garante que o container ocupe toda a largura */
   background-color: #f0f2f5;
 }
 
 .login-box {
-  display: flex; /* Habilita flexbox */
-  flex-direction: column; /* Organiza os itens em coluna */
-  align-items: center; /* Centraliza os itens horizontalmente */
   text-align: center;
   background-color: white;
   padding: 40px;
   border-radius: 8px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  max-width: 400px; /* Adiciona uma largura máxima para o box não ficar muito largo em telas grandes */
-  width: 90%; /* Adiciona uma largura relativa */
 }
 
 h1 {
@@ -124,13 +102,5 @@ p {
 .error-message {
   color: #D8000C; /* Vermelho para erro */
   margin-top: 15px;
-}
-
-/* Media query para telas menores (ex: smartphones) */
-@media (max-width: 480px) {
-  .login-box {
-    padding: 25px;
-    width: 95%;
-  }
 }
 </style> 

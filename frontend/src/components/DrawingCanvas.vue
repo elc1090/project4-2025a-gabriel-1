@@ -1,38 +1,44 @@
 <template>
-  <div class="canvas-container">
-    <canvas
-      ref="viewportCanvasRef"
-      @mousedown="handleMouseDown"
-      @mousemove="handleMouseMove"
-      @mouseup="handleMouseUpOrOut"
-      @mouseout="handleMouseUpOrOut"
-      @wheel.prevent="handleWheel"
-      @touchstart.prevent="handleTouchStart"
-      @touchmove.prevent="handleTouchMove"
-      @touchend="handleTouchEnd"
-      @contextmenu.prevent="showContextMenu"
-      class="viewport-canvas"
-    ></canvas>
-    <ContextMenu
-      v-if="menu.visible"
-      :x="menu.x"
-      :y="menu.y"
-      @select="handleMenuSelection"
-    />
-    <button @click="toggleMenu" class="menu-button">☰</button>
-    <div v-if="isMenuOpen" class="placeholder-menu">
-      <!-- O conteúdo do menu virá aqui -->
-      <p>Menu Placeholder</p>
-    </div>
-  </div>
+  <WhiteboardMenu
+    :selected-board-id="currentBoardId"
+    @board-selected="handleBoardSelected"
+    @board-created="handleBoardSelected"
+    @board-deleted="handleBoardDeleted"
+  />
+  <canvas
+    ref="viewportCanvasRef"
+    @mousedown="handleMouseDown"
+    @mousemove="handleMouseMove"
+    @mouseup="handleMouseUpOrOut"
+    @mouseout="handleMouseUpOrOut"
+    @wheel.prevent="handleWheel"
+    @touchstart.prevent="handleTouchStart"
+    @touchmove.prevent="handleTouchMove"
+    @touchend="handleTouchEnd"
+    @contextmenu.prevent="showContextMenu"
+    class="viewport-canvas"
+  ></canvas>
+  <ContextMenu
+    v-if="menu.visible"
+    :x="menu.x"
+    :y="menu.y"
+    @select="handleMenuSelection"
+  />
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, onUnmounted } from 'vue';
 import ContextMenu from './ContextMenu.vue';
+import WhiteboardMenu from './WhiteboardMenu.vue';
+import { userInfo } from '../services/userInfo';
 import { io } from 'socket.io-client';
 
+const props = defineProps({
+  user: Object,
+});
+
 const socket = ref(null);
+const currentBoardId = ref(1);
 
 const viewportCanvasRef = ref(null);
 let ctx = null;
@@ -55,7 +61,7 @@ const viewportState = reactive({
 
 const strokes = ref([]);
 let currentStroke = null;
-let isDrawing = false; // Adicionado para controlar o estado de desenho
+let isDrawing = false;
 let potentialDrawingStart = false;
 
 const drawingSettings = reactive({
@@ -63,18 +69,16 @@ const drawingSettings = reactive({
   lineWidth: 3,
 });
 
-const isMenuOpen = ref(false);
-
 const menu = reactive({
   visible: false,
   x: 0,
   y: 0,
 });
 
-const longPressDuration = 700; // ms para o toque longo (ajustei um pouco)
+const longPressDuration = 700;
 let longPressTimer = null;
 let touchStartCoords = { x: 0, y: 0, time: 0 };
-const longPressMoveThreshold = 10; // Pixels
+const longPressMoveThreshold = 10;
 
 let isMultiTouching = false;
 let initialGestureInfo = {
@@ -86,18 +90,51 @@ let initialGestureInfo = {
   scale: 1,
 };
 
-// --- Ciclo de Vida e Conexão Socket.IO ---
+function switchBoard(board) {
+  if (!socket.value || !socket.value.connected) return;
+
+  const boardId = typeof board === 'object' ? board.id : board;
+  
+  if (currentBoardId.value === boardId) return;
+
+  console.log(`FRONTEND: Trocando para a lousa ${boardId}`);
+  
+  strokes.value = [];
+  redraw();
+
+  currentBoardId.value = boardId;
+  
+  socket.value.emit('join_board', {
+    board_id: currentBoardId.value,
+    user_email: userInfo.value?.email
+  });
+}
+
+function handleBoardSelected(board) {
+  switchBoard(board);
+}
+
+function handleBoardDeleted(deletedBoardId) {
+  if (currentBoardId.value === deletedBoardId) {
+    console.log(`FRONTEND: A lousa atual (${deletedBoardId}) foi deletada. Voltando para a principal.`);
+    switchBoard({ id: 1, nickname: "Lousa Principal" });
+  }
+}
+
 onMounted(() => {
   setupViewportAndWorld();
   window.addEventListener('resize', setupViewportAndWorld);
 
-  const backendUrl = 'https://project3-2025a-gabriel.onrender.com';
+  const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
   socket.value = io(backendUrl, {
     transports: ['websocket', 'polling']
   });
 
   socket.value.on('connect', () => {
     console.log('FRONTEND: Conectado ao servidor Socket.IO com ID:', socket.value.id);
+    if (userInfo.value?.email) {
+      socket.value.emit('join_board', { board_id: currentBoardId.value, user_email: userInfo.value.email });
+    }
   });
 
   socket.value.on('connection_established', (data) => {
@@ -109,7 +146,7 @@ onMounted(() => {
   });
 
   socket.value.on('initial_drawing', (data) => {
-    console.log('FRONTEND: Recebendo desenho inicial:', data.strokes.length, 'traços');
+    console.log(`FRONTEND: Recebendo desenho inicial para lousa.`, data.strokes.length, 'traços');
     strokes.value = data.strokes.map(strokeData => ({
       points: strokeData.points,
       color: strokeData.color,
@@ -119,6 +156,8 @@ onMounted(() => {
   });
 
   socket.value.on('stroke_received', (strokeData) => {
+    if (strokeData.board_id !== currentBoardId.value) return;
+
     console.log('FRONTEND: Novo traço recebido:', strokeData);
     strokes.value.push({
       points: strokeData.points,
@@ -128,8 +167,10 @@ onMounted(() => {
     redraw();
   });
 
-  socket.value.on('canvas_cleared', () => {
-    console.log('FRONTEND: Evento de limpar canvas recebido do servidor.');
+  socket.value.on('canvas_cleared', (data) => {
+    if (data.board_id !== currentBoardId.value) return;
+
+    console.log(`FRONTEND: Evento de limpar canvas recebido do servidor para a lousa ${data.board_id}.`);
     strokes.value = [];
     redraw();
   });
@@ -142,7 +183,6 @@ onUnmounted(() => {
   }
 });
 
-// --- Funções de Setup, Desenho e Coordenadas (sem alterações nas lógicas centrais) ---
 function setupViewportAndWorld() {
   const canvas = viewportCanvasRef.value;
   if (!canvas) return;
@@ -209,10 +249,9 @@ function screenToWorldCoordinates(screenX, screenY) {
   };
 }
 
-// --- Manipuladores de Eventos de Mouse (mantidos como na sua versão) ---
 function handleMouseDown(event) {
   menu.visible = false;
-  isDrawing = false; // Resetar isDrawing para interações de mouse
+  isDrawing = false;
   if (event.button === 0) {
     const { x, y } = screenToWorldCoordinates(event.offsetX, event.offsetY);
     currentStroke = {
@@ -221,8 +260,8 @@ function handleMouseDown(event) {
       lineWidth: drawingSettings.lineWidth,
     };
     strokes.value.push(currentStroke);
-    isDrawing = true; // Mouse está desenhando
-    redraw(); // Para mostrar o primeiro ponto do mouse
+    isDrawing = true;
+    redraw();
   } else if (event.button === 1) {
     event.preventDefault();
     viewportState.isPanning = true;
@@ -232,7 +271,7 @@ function handleMouseDown(event) {
 }
 
 function handleMouseMove(event) {
-  if (isDrawing && currentStroke && (event.buttons & 1)) { // Verifica se o botão esquerdo está pressionado
+  if (isDrawing && currentStroke && (event.buttons & 1)) {
     const { x, y } = screenToWorldCoordinates(event.offsetX, event.offsetY);
     currentStroke.points.push({ x, y });
     redraw();
@@ -248,21 +287,22 @@ function handleMouseMove(event) {
 }
 
 function handleMouseUpOrOut(event) {
-  if (event.button === 0 && currentStroke) { // Se estava desenhando com o botão esquerdo
+  if (event.button === 0 && currentStroke) {
     if (currentStroke.points.length > 1 && socket.value) {
       socket.value.emit('draw_stroke_event', {
+        board_id: currentBoardId.value,
         points: currentStroke.points,
         color: currentStroke.color,
         lineWidth: currentStroke.lineWidth
       });
-    } else if (currentStroke.points.length <= 1) { // Remove ponto único se não arrastou
+    } else if (currentStroke.points.length <= 1) {
         const index = strokes.value.indexOf(currentStroke);
         if (index > -1) strokes.value.splice(index,1);
         redraw();
     }
     isDrawing = false;
   }
-  currentStroke = null; // Resetar sempre, independente do botão
+  currentStroke = null;
 
   if (event.button === 1 || !(event.buttons & 4)) {
     viewportState.isPanning = false;
@@ -271,7 +311,7 @@ function handleMouseUpOrOut(event) {
 
 function handleWheel(event) {
   event.preventDefault();
-  menu.visible = false; // Opcional: fechar menu no zoom
+  menu.visible = false;
   const scaleAmountFactor = 1.1;
   const mouseX_view = event.offsetX;
   const mouseY_view = event.offsetY;
@@ -288,8 +328,6 @@ function handleWheel(event) {
   viewportState.offsetY = mouseY_view - worldP_before.y * viewportState.scale;
   redraw();
 }
-
-// --- Manipuladores de Toque ATUALIZADOS COM DEPURAÇÃO DETALHADA ---
 
 function showContextMenuAt(screenX, screenY) {
   if (socket.value) socket.value.emit('debug_touch_event', { type: 'showContextMenuAt_Triggered', screenX, screenY, sid: socket.value.id });
@@ -340,10 +378,9 @@ function handleTouchStart(event) {
 
     clearTimeout(longPressTimer);
     longPressTimer = setTimeout(() => {
-      if (potentialDrawingStart && !isMultiTouching) { // Só dispara se ainda for um candidato a toque longo
+      if (potentialDrawingStart && !isMultiTouching) {
         if (socket.value) socket.value.emit('debug_touch_event', { type: 'touchstart_LongPress_TimerFired_Successfully', sid: socket.value.id });
         showContextMenuAt(touchStartCoords.x, touchStartCoords.y);
-        // showContextMenuAt já define potentialDrawingStart = false e isDrawing = false
       } else {
         if (socket.value) socket.value.emit('debug_touch_event', { type: 'touchstart_LongPress_TimerFired_But_Invalidated', potentialDrawingStart, isMultiTouching, sid: socket.value.id });
       }
@@ -364,7 +401,7 @@ function handleTouchStart(event) {
     
     clearTimeout(longPressTimer);
     longPressTimer = null;
-    potentialDrawingStart = false; // Não é mais um candidato a desenho de um dedo
+    potentialDrawingStart = false;
 
     if (isDrawing && currentStroke) {
         if (currentStroke.points.length > 1 && socket.value) {
@@ -417,23 +454,21 @@ function handleTouchMove(event) {
     const screenX = touch.clientX - rect.left;
     const screenY = touch.clientY - rect.top;
 
-    if (potentialDrawingStart) { // Se era um candidato a desenho/toque longo
+    if (potentialDrawingStart) {
       const deltaX = touch.clientX - touchStartCoords.x;
       const deltaY = touch.clientY - touchStartCoords.y;
 
       if (Math.hypot(deltaX, deltaY) > longPressMoveThreshold) {
-        // Moveu o suficiente: é um desenho, cancela o toque longo.
         if (longPressTimer) {
           if (socket.value) socket.value.emit('debug_touch_event', { type: 'touchmove_SingleTouch_LongPressCancelledByMove', sid: socket.value.id });
           clearTimeout(longPressTimer);
           longPressTimer = null;
         }
         
-        if (!isDrawing) { // Se o desenho ainda não começou oficialmente
-          isDrawing = true; // Começa a desenhar AGORA
-          potentialDrawingStart = false; // Não é mais "potencial"
+        if (!isDrawing) {
+          isDrawing = true;
+          potentialDrawingStart = false;
           
-          // Usa as coordenadas INICIAIS do toque para o primeiro ponto do traço
           const initialWorldCoords = screenToWorldCoordinates(touchStartCoords.x - rect.left, touchStartCoords.y - rect.top);
           currentStroke = {
             points: [initialWorldCoords],
@@ -449,7 +484,6 @@ function handleTouchMove(event) {
               sid: socket.value.id
             });
           }
-          // Adiciona o ponto ATUAL também, já que houve movimento
           const currentWorldCoords = screenToWorldCoordinates(screenX, screenY);
           currentStroke.points.push(currentWorldCoords);
           redraw();
@@ -457,14 +491,8 @@ function handleTouchMove(event) {
       }
     }
     
-    // Se o desenho já começou (isDrawing é true)
     if (isDrawing && currentStroke) {
-      // Só adiciona o ponto se não for o primeiro ponto já adicionado ao iniciar o desenho no move
-      // ou se a lógica acima já não adicionou o ponto atual.
-      // Para simplificar: se isDrawing e currentStroke, adiciona o ponto atual.
-      // A lógica de não duplicar o primeiro ponto pode ser refinada se necessário.
       const worldCoords = screenToWorldCoordinates(screenX, screenY);
-      // Evitar pontos duplicados se o movimento for mínimo e já adicionado
       const lastPoint = currentStroke.points[currentStroke.points.length -1];
       if (!lastPoint || lastPoint.x !== worldCoords.x || lastPoint.y !== worldCoords.y) {
           currentStroke.points.push(worldCoords);
@@ -473,19 +501,17 @@ function handleTouchMove(event) {
       if (socket.value) socket.value.emit('debug_touch_event', { type: 'touchmove_SingleTouch_PointAddedToStroke', points: currentStroke.points.length, sid: socket.value.id });
       redraw();
     } else if (touches.length === 1 && !isDrawing && !potentialDrawingStart && socket.value ) {
-        // Caso onde moveu, mas não está desenhando e não é um potencial começo (ex: menu já abriu)
         socket.value.emit('debug_touch_event', { type: 'touchmove_SingleTouch_MoveIgnored_NotDrawingNotPotential', sid: socket.value.id });
     }
 
   } else if (touches.length >= 2 && isMultiTouching) {
     if (socket.value) socket.value.emit('debug_touch_event', { type: 'touchmove_MultiTouch_Processing', sid: socket.value.id, touches: touches.length });
     
-    clearTimeout(longPressTimer); // Garante que o toque longo é cancelado
+    clearTimeout(longPressTimer);
     longPressTimer = null;
-    potentialDrawingStart = false; // Não é um início de desenho de um dedo
-    isDrawing = false; // Não está desenhando
+    potentialDrawingStart = false;
+    isDrawing = false;
 
-    // ... (sua lógica de pan/zoom com initialGestureInfo como antes) ...
     const t1 = touches[0];
     const t2 = touches[1];
     const currentScreenMidX = (t1.clientX - rect.left + t2.clientX - rect.left) / 2;
@@ -505,171 +531,69 @@ function handleTouchMove(event) {
 }
 
 function handleTouchEnd(event) {
-  event.preventDefault();
-  const changedTouches = event.changedTouches; // Dedos que foram levantados
-  const touchesStillOnScreen = event.touches.length; // Dedos que ainda estão na tela
-
-  if (socket.value) {
-    const changedTouchData = Array.from(changedTouches).map(t => ({ id: t.identifier, clientX: t.clientX, clientY: t.clientY }));
-    socket.value.emit('debug_touch_event', {
-      type: 'touchend_ENTRY',
-      touchesOnScreen: touchesStillOnScreen,
-      changedTouches: changedTouches.length,
-      changedTouchData: changedTouchData,
-      isDrawing_state: isDrawing,
-      isMultiTouching_state: isMultiTouching,
-      currentStroke_exists: !!currentStroke,
-      potentialDrawingStart_state: potentialDrawingStart,
-      sid: socket.value.id
-    });
+  if (isMultiTouching) {
+    isMultiTouching = false;
+    return;
   }
+  clearTimeout(longPressTimer);
 
-  clearTimeout(longPressTimer); // Sempre limpa o timer de toque longo
-  longPressTimer = null;
-
-  // Verifica se um dedo foi levantado e se era um toque de desenho (não multi-touch)
-  if (isDrawing && currentStroke && !isMultiTouching && changedTouches.length > 0) {
-    // Assumimos que o changedTouch é o que estava desenhando
-    if (currentStroke.points.length > 1) {
-      if (socket.value) {
-        socket.value.emit('draw_stroke_event', {
-          points: currentStroke.points,
-          color: currentStroke.color,
-          lineWidth: currentStroke.lineWidth
-        });
-        if (socket.value) socket.value.emit('debug_touch_event', { type: 'touchend_EmittedDrawEvent', points: currentStroke.points.length, sid: socket.value.id });
-      }
-    } else if (currentStroke) { // Era um toque curto (tap) que não virou desenho
-      const index = strokes.value.indexOf(currentStroke);
-      if (index > -1) {
-        strokes.value.splice(index, 1);
-      }
-      if (socket.value) socket.value.emit('debug_touch_event', { type: 'touchend_RemovedSingleDotStroke_TapEnd', sid: socket.value.id });
-      redraw(); 
+  if (isDrawing && currentStroke) {
+    if (currentStroke.points.length > 1 && socket.value) {
+      socket.value.emit('draw_stroke_event', {
+        board_id: currentBoardId.value,
+        points: currentStroke.points,
+        color: currentStroke.color,
+        lineWidth: currentStroke.lineWidth
+      });
+    } else if (currentStroke.points.length <= 1) {
+        const index = strokes.value.indexOf(currentStroke);
+        if (index > -1) {
+            strokes.value.splice(index, 1);
+        }
+        redraw();
     }
   }
-  
-  potentialDrawingStart = false; // Resetar para o próximo toque
 
-  // Atualiza estados com base nos dedos restantes
-  if (touchesStillOnScreen < 2) {
-    if (isMultiTouching && socket.value) socket.value.emit('debug_touch_event', { type: 'touchend_Reset_isMultiTouching_to_false', sid: socket.value.id });
-    isMultiTouching = false;
-  }
-  if (touchesStillOnScreen < 1) {
-    if (isDrawing && socket.value) socket.value.emit('debug_touch_event', { type: 'touchend_Reset_isDrawing_to_false', sid: socket.value.id });
-    isDrawing = false;
-    currentStroke = null;
-  } else if (touchesStillOnScreen === 1 && isMultiTouching) {
-      // Se estava em multi-touch e sobrou um dedo, não necessariamente começa a desenhar.
-      // O próximo touchstart desse dedo decidirá. Resetamos isMultiTouching.
-      // isDrawing já deve ser false.
-  }
+  isDrawing = false;
+  currentStroke = null;
+  potentialDrawingStart = false;
 }
 
-
-// --- Funções do Menu de Contexto (mantidas como na sua versão) ---
 function showContextMenu(event) {
   menu.x = event.clientX;
   menu.y = event.clientY;
   menu.visible = true;
 }
 
-function clearStrokes() { // Renomeada para consistência, chamada pelo menu
-  strokes.value = [];
-  redraw();
-  if (socket.value) { // Notificar o servidor sobre a limpeza
-    socket.value.emit('clear_canvas_event', {});
-  }
-}
-
-function handleMenuSelection(action, value) {
+function handleMenuSelection(option) {
   menu.visible = false;
-  switch (action) {
-    case 'clear':
-      clearStrokes(); // Chama a função de limpeza
-      break;
-    case 'setColor':
-      drawingSettings.color = value;
-      break;
-    case 'setThickness':
-      drawingSettings.lineWidth = value;
-      break;
-    case 'resetView':
-      resetView();
-      break;
+  if (option === 'clear') {
+    if (confirm('Tem certeza que deseja limpar o canvas para todos?')) {
+      console.log(`FRONTEND: Enviando evento para limpar canvas da lousa ${currentBoardId.value}`);
+      if (socket.value) {
+        socket.value.emit('clear_canvas_event', { board_id: currentBoardId.value });
+      }
+      strokes.value = [];
+      redraw();
+    }
+  } else if (option === 'resetView') {
+    resetView();
+  } else if (option === 'setColor') {
+    drawingSettings.color = option;
+  } else if (option === 'setThickness') {
+    drawingSettings.lineWidth = option;
   }
-}
-
-function toggleMenu() {
-  isMenuOpen.value = !isMenuOpen.value;
 }
 </script>
 
 <style scoped>
-.canvas-container {
-  position: relative;
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background-color: #333; /* Cor de fundo para o container */
-}
-
 .viewport-canvas {
-  /* O canvas já é redimensionado via JS, então não precisa de w/h aqui */
-  border: 2px solid #444;
-  box-shadow: 0 0 10px rgba(0,0,0,0.5);
+  border: 1px solid #505050;
   cursor: crosshair;
+  background-color: #777;
   display: block;
   touch-action: none;
-}
-
-.menu-button {
-  position: absolute;
-  top: 20px;
-  left: 20px;
-  z-index: 100; /* Mais alto para garantir que fique sobre tudo */
-  padding: 8px 12px;
-  font-size: 24px; /* Maior para ser mais fácil de tocar */
-  line-height: 1;
-  background-color: rgba(255, 255, 255, 0.9);
-  color: #333;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  cursor: pointer;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-  transition: background-color 0.2s, box-shadow 0.2s;
-  -webkit-tap-highlight-color: transparent; /* Remove o destaque de toque em mobile */
-}
-
-.menu-button:hover, .menu-button:focus {
-  background-color: #fff;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-  outline: none;
-}
-
-.placeholder-menu {
-  position: absolute;
-  top: 70px; /* Abaixo do botão do menu */
-  left: 20px;
-  z-index: 100;
-  width: 250px;
-  padding: 15px;
-  background-color: white;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.placeholder-menu p {
-  margin: 0;
-  font-size: 16px;
-  color: #555;
+  box-shadow: 0 0 10px rgba(0,0,0,0.3);
+  margin: auto;
 }
 </style>
