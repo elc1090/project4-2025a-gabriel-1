@@ -349,9 +349,11 @@ def google_auth():
         user_name = idinfo['name']
         user_picture = idinfo['picture']
 
-        # Verificar se o usuário existe ou criar um novo
+        # 1. Encontrar ou preparar o objeto do usuário
         user = User.query.get(user_id)
+        is_new_user = False
         if not user:
+            is_new_user = True
             user = User(
                 id=user_id,
                 email=user_email,
@@ -359,18 +361,29 @@ def google_auth():
                 profile_pic=user_picture
             )
             db.session.add(user)
-            # Dando acesso à lousa padrão para novos usuários
-            default_board = Whiteboard.query.get(DEFAULT_BOARD_ID)
-            if default_board:
-                user.accessible_whiteboards.append(default_board)
-            db.session.commit()
+
+        # 2. Encontrar ou criar a lousa padrão
+        default_board = Whiteboard.query.get(DEFAULT_BOARD_ID)
+        if not default_board:
+            # A lousa não existe, vamos criá-la e o usuário atual será o dono.
+            default_board = Whiteboard(
+                id=DEFAULT_BOARD_ID, 
+                nickname="Lousa Principal", 
+                owner_id=user.id
+            )
+            db.session.add(default_board)
+        
+        # 3. Garantir que o usuário tenha acesso
+        # Esta verificação é importante para usuários existentes que podem não ter o acesso.
+        if default_board not in user.accessible_whiteboards:
+            user.accessible_whiteboards.append(default_board)
+        
+        # 4. Commit de todas as alterações
+        db.session.commit()
+
+        if is_new_user:
             print(f"Novo usuário criado: {user_name} ({user_email})")
         else:
-            # Garante que usuários existentes também tenham acesso
-            default_board = Whiteboard.query.get(DEFAULT_BOARD_ID)
-            if default_board and default_board not in user.accessible_whiteboards:
-                user.accessible_whiteboards.append(default_board)
-                db.session.commit()
             print(f"Usuário existente logado: {user.name} ({user.email})")
 
         # Futuramente, poderíamos gerar um token JWT aqui para sessões seguras
