@@ -94,15 +94,21 @@ export default {
   justify-content: center;
   align-items: center;
   height: 100vh;
+  width: 100vw; /* Garante que o container ocupe toda a largura */
   background-color: #f0f2f5;
 }
 
 .login-box {
+  display: flex; /* Habilita flexbox */
+  flex-direction: column; /* Organiza os itens em coluna */
+  align-items: center; /* Centraliza os itens horizontalmente */
   text-align: center;
   background-color: white;
   padding: 40px;
   border-radius: 8px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  max-width: 400px; /* Adiciona uma largura máxima para o box não ficar muito largo em telas grandes */
+  width: 90%; /* Adiciona uma largura relativa */
 }
 
 h1 {
@@ -118,5 +124,13 @@ p {
 .error-message {
   color: #D8000C; /* Vermelho para erro */
   margin-top: 15px;
+}
+
+/* Media query para telas menores (ex: smartphones) */
+@media (max-width: 480px) {
+  .login-box {
+    padding: 25px;
+    width: 95%;
+  }
 }
 </style> 
