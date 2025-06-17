@@ -37,7 +37,7 @@ const emit = defineEmits(['board-selected', 'board-created', 'board-deleted']);
 const isMenuOpen = ref(false);
 const boards = ref([]);
 const newBoardName = ref('');
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL || 'https://project3-2025a-gabriel.onrender.com';
 
 const toggleMenu = () => {
   isMenuOpen.value = !isMenuOpen.value;
