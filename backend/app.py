@@ -280,25 +280,30 @@ def create_whiteboard():
     if not user:
         return jsonify({"message": "Usuário proprietário não encontrado"}), 404
 
-    new_board = Whiteboard(
-        nickname=nickname,
-        owner_id=user.id
-    )
-    # Adiciona o criador à lista de acesso
-    new_board.accessible_by_users.append(user)
-    
-    db.session.add(new_board)
-    db.session.commit()
+    try:
+        new_board = Whiteboard(
+            nickname=nickname,
+            owner_id=user.id
+        )
+        # Adiciona o criador à lista de acesso
+        new_board.accessible_by_users.append(user)
+        
+        db.session.add(new_board)
+        db.session.commit()
 
-    return jsonify({
-        "message": "Lousa criada com sucesso!",
-        "whiteboard": {
-            'id': new_board.id,
-            'nickname': new_board.nickname,
-            'owner_id': new_board.owner_id,
-            'is_owner': True
-        }
-    }), 201
+        return jsonify({
+            "message": "Lousa criada com sucesso!",
+            "whiteboard": {
+                'id': new_board.id,
+                'nickname': new_board.nickname,
+                'owner_id': new_board.owner_id,
+                'is_owner': True
+            }
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        print(f"Erro ao criar lousa no banco de dados: {e}")
+        return jsonify({"message": "Erro interno ao criar a lousa."}), 500
 
 @app.route('/api/whiteboards/<int:board_id>', methods=['DELETE'])
 def delete_whiteboard(board_id):
