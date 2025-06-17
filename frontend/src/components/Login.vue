@@ -21,56 +21,56 @@
   </div>
 </template>
 
-<script>
-export default {
-  name: 'Login',
-  data() {
-    return {
-      errorMessage: '',
-      googleClientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-    };
-  },
-  methods: {
-    async handleGoogleSignIn(response) {
-      console.log("Recebida credencial do Google:", response.credential);
-      this.errorMessage = '';
-      try {
-        const res = await fetch('/api/auth/google', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ credential: response.credential }),
-        });
+<script setup>
+import { ref, onMounted, defineEmits } from 'vue';
 
-        const data = await res.json();
+const emit = defineEmits(['login-success']);
 
-        if (!res.ok) {
-          throw new Error(data.message || 'Falha no login');
-        }
+const errorMessage = ref('');
+const googleClientId = ref(import.meta.env.VITE_GOOGLE_CLIENT_ID);
 
-        console.log('Login no backend bem-sucedido:', data.user);
-        this.$emit('login-success', data.user);
-      } catch (error) {
-        console.error('Erro ao fazer login:', error);
-        this.errorMessage = `Erro: ${error.message}. Verifique o console para mais detalhes.`;
-      }
+const handleGoogleSignIn = async (response) => {
+  console.log("Recebida credencial do Google:", response.credential);
+  errorMessage.value = '';
+  try {
+    // A URL da API deve ser a URL do seu backend, que pode estar rodando localmente ou em um servidor.
+    // Usar um caminho relativo /api/auth/google só funciona se o servidor de desenvolvimento do Vite (ou um servidor web de produção)
+    // estiver configurado para fazer proxy das requisições para o backend Flask.
+    const apiUrl = import.meta.env.VITE_API_URL || ''; // Use a variável de ambiente ou um caminho relativo
+    const res = await fetch(`${apiUrl}/api/auth/google`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ credential: response.credential }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.message || 'Falha no login');
     }
-  },
-  mounted() {
-    if (!this.googleClientId) {
-        console.error("VITE_GOOGLE_CLIENT_ID não está definida no frontend.");
-        this.errorMessage = "Erro de configuração do cliente. O login não funcionará.";
-    }
-    
-    // Anexa a função de callback à `window` para que o script do Google possa chamá-la.
-    window.handleGoogleSignIn = this.handleGoogleSignIn;
-  },
-  beforeUnmount() {
-    // Limpa a função da `window` quando o componente for destruído para evitar vazamentos de memória.
-    delete window.handleGoogleSignIn;
+
+    console.log('Login no backend bem-sucedido:', data.user);
+    emit('login-success', data.user);
+  } catch (error) {
+    console.error('Erro ao fazer login:', error);
+    errorMessage.value = `Erro: ${error.message}. Verifique o console para mais detalhes.`;
   }
 };
+
+onMounted(() => {
+  if (!googleClientId.value) {
+      console.error("VITE_GOOGLE_CLIENT_ID não está definida no frontend.");
+      errorMessage.value = "Erro de configuração do cliente. O login não funcionará.";
+  }
+  
+  // O script do Google espera que a função de callback esteja no escopo global (window).
+  // No <script setup>, as funções não são expostas automaticamente.
+  // Precisamos anexá-la explicitamente ao objeto window.
+  window.handleGoogleSignIn = handleGoogleSignIn;
+});
+
 </script>
 
 <style scoped>
