@@ -204,13 +204,12 @@ def handle_disconnect():
         try:
             user = User.query.get(user_id_to_delete)
             if user:
-                # Importante: para deletar um usuário, precisamos primeiro remover as associações
-                # ou configurar o banco de dados para fazer isso em cascata.
-                # Como um convidado não pode ser dono de uma lousa, só precisamos nos preocupar
-                # com a tabela de acesso. A SQLAlchemy geralmente cuida disso se o relacionamento
-                # estiver configurado corretamente, mas vamos ser explícitos.
-                user.accessible_whiteboards.clear()
-                db.session.commit() # Salva a remoção da associação
+                # A relação 'accessible_whiteboards' é carregada dinamicamente (lazy='dynamic'),
+                # o que significa que se comporta como uma query, não uma lista. Portanto, .clear() não funciona.
+                # Para desassociar o usuário de todos os quadros, iteramos sobre uma cópia da lista
+                # e removemos cada um. A alteração será commitada junto com a exclusão do usuário.
+                for board in list(user.accessible_whiteboards):
+                    user.accessible_whiteboards.remove(board)
 
                 db.session.delete(user)
                 db.session.commit()

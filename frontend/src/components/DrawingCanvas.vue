@@ -539,23 +539,23 @@ function handleTouchEnd(event) {
 
   if (isDrawing && currentStroke) {
     if (currentStroke.points.length > 1 && socket.value) {
-      socket.value.emit('draw_stroke_event', {
+        socket.value.emit('draw_stroke_event', {
         board_id: currentBoardId.value,
-        points: currentStroke.points,
-        color: currentStroke.color,
-        lineWidth: currentStroke.lineWidth
-      });
+          points: currentStroke.points,
+          color: currentStroke.color,
+          lineWidth: currentStroke.lineWidth
+        });
     } else if (currentStroke.points.length <= 1) {
-        const index = strokes.value.indexOf(currentStroke);
-        if (index > -1) {
-            strokes.value.splice(index, 1);
-        }
-        redraw();
+      const index = strokes.value.indexOf(currentStroke);
+      if (index > -1) {
+        strokes.value.splice(index, 1);
+      }
+      redraw(); 
     }
   }
-
-  isDrawing = false;
-  currentStroke = null;
+  
+    isDrawing = false;
+    currentStroke = null;
   potentialDrawingStart = false;
 }
 
@@ -577,7 +577,7 @@ function handleMenuSelection(option) {
       redraw();
     }
   } else if (option === 'resetView') {
-    resetView();
+      resetView();
   } else if (option === 'setColor') {
     drawingSettings.color = option;
   } else if (option === 'setThickness') {
