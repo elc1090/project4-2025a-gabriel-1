@@ -565,24 +565,33 @@ function showContextMenu(event) {
   menu.visible = true;
 }
 
-function handleMenuSelection(option) {
+function handleMenuSelection(action, value) {
   menu.visible = false;
-  if (option === 'clear') {
-    if (confirm('Tem certeza que deseja limpar o canvas para todos?')) {
-      console.log(`FRONTEND: Enviando evento para limpar canvas da lousa ${currentBoardId.value}`);
-      if (socket.value) {
-        socket.value.emit('clear_canvas_event', { board_id: currentBoardId.value });
+  switch (action) {
+    case 'clear':
+      if (confirm('Tem certeza que deseja limpar o canvas para todos?')) {
+        console.log(`FRONTEND: Enviando evento para limpar canvas da lousa ${currentBoardId.value}`);
+        if (socket.value) {
+          socket.value.emit('clear_canvas_event', { board_id: currentBoardId.value });
+        }
+        strokes.value = [];
+        redraw();
       }
-      strokes.value = [];
-      redraw();
-    }
-  } else if (option === 'resetView') {
+      break;
+    case 'resetView':
       resetView();
-  } else if (option === 'setColor') {
-    drawingSettings.color = option;
-  } else if (option === 'setThickness') {
-    drawingSettings.lineWidth = option;
+      break;
+    case 'setColor':
+      drawingSettings.color = value;
+      break;
+    case 'setThickness':
+      drawingSettings.lineWidth = value;
+      break;
   }
+}
+
+function getDistance(p1, p2) {
+  // ... existing code ...
 }
 </script>
 
