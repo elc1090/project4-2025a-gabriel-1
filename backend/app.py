@@ -451,12 +451,19 @@ def google_auth():
 def guest_auth():
     """Cria um usuário convidado temporário."""
     try:
+        data = request.get_json() or {}
+        user_provided_name = data.get('name', '').strip()
+
         # 1. Criar o usuário convidado
         guest_uuid = str(uuid.uuid4())
         guest_id = f"guest_{guest_uuid}"
         guest_email = f"{guest_id}@guest.local"
-        # Gera um número de 4 dígitos para o nome
-        guest_name = f"Visitante {str(uuid.uuid4())[:4]}"
+        
+        # Usa o nome fornecido ou gera um aleatório
+        if user_provided_name:
+            guest_name = user_provided_name
+        else:
+            guest_name = f"Visitante {str(uuid.uuid4())[:4]}"
         
         user = User(
             id=guest_id,

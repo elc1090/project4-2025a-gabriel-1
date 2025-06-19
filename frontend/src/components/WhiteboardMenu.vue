@@ -9,7 +9,14 @@
           <img :src="userInfo?.profile_pic" alt="Avatar" class="user-avatar">
           <div class="user-details">
             <span class="user-name">{{ userInfo?.name }}</span>
-            <span class="user-id">{{ userInfo?.id }}</span>
+            <div class="user-id-container">
+              <span class="user-id-label">ID:</span>
+              <span class="user-id-value">{{ userInfo?.id }}</span>
+              <button @click="copyUserId" class="copy-btn" :title="copyButtonText">
+                <svg v-if="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4CAF50" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              </button>
+            </div>
           </div>
         </div>
         <button @click="closeMenu" class="close-btn">&times;</button>
@@ -44,6 +51,8 @@ const emit = defineEmits(['board-selected', 'board-created', 'board-deleted']);
 const isMenuOpen = ref(false);
 const boards = ref([]);
 const newBoardName = ref('');
+const copied = ref(false);
+const copyButtonText = ref('Copiar ID');
 const API_URL = import.meta.env.VITE_API_URL || 'https://project3-2025a-gabriel.onrender.com';
 
 const toggleMenu = () => {
@@ -124,6 +133,24 @@ const deleteBoard = async (boardId) => {
 const selectBoard = (board) => {
   emit('board-selected', board);
   closeMenu();
+};
+
+const copyUserId = () => {
+  if (!userInfo.value?.id) return;
+  navigator.clipboard.writeText(userInfo.value.id).then(() => {
+    copied.value = true;
+    copyButtonText.value = 'Copiado!';
+    setTimeout(() => {
+      copied.value = false;
+      copyButtonText.value = 'Copiar ID';
+    }, 2000);
+  }).catch(err => {
+    console.error('Falha ao copiar o ID:', err);
+    copyButtonText.value = 'Falha ao copiar';
+    setTimeout(() => {
+      copyButtonText.value = 'Copiar ID';
+    }, 2000);
+  });
 };
 
 onMounted(() => {
@@ -216,6 +243,7 @@ watch(userInfo, (newUserInfo) => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  gap: 2px;
 }
 
 .user-name {
@@ -226,12 +254,38 @@ watch(userInfo, (newUserInfo) => {
   text-overflow: ellipsis;
 }
 
-.user-id {
+.user-id-container {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.user-id-label {
+  font-size: 12px;
+  color: #666;
+  font-weight: bold;
+}
+
+.user-id-value {
   font-size: 12px;
   color: #666;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.copy-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+}
+.copy-btn:hover {
+  color: #000;
 }
 
 .boards-title {

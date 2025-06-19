@@ -17,6 +17,7 @@
            data-logo_alignment="left">
       </div>
       <div class="guest-login">
+        <input v-model="guestName" type="text" placeholder="Digite seu nome de visitante" class="guest-name-input" @keyup.enter="handleGuestLogin" />
         <button @click="handleGuestLogin" class="guest-btn">Entrar como Visitante</button>
       </div>
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
@@ -30,6 +31,7 @@ import { ref, onMounted, defineEmits } from 'vue';
 const emit = defineEmits(['login-success']);
 
 const errorMessage = ref('');
+const guestName = ref('');
 const googleClientId = ref(import.meta.env.VITE_GOOGLE_CLIENT_ID);
 const apiUrl = import.meta.env.VITE_API_URL || 'https://project3-2025a-gabriel.onrender.com';
 
@@ -65,6 +67,10 @@ const handleGuestLogin = async () => {
   try {
     const res = await fetch(`${apiUrl}/api/auth/guest`, {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name: guestName.value }),
     });
 
     const data = await res.json();
@@ -128,6 +134,17 @@ p {
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.guest-name-input {
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 16px;
+  text-align: center;
 }
 
 .guest-btn {
