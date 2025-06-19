@@ -25,9 +25,14 @@
       <ul>
         <li v-for="board in boards" :key="board.id" @click="selectBoard(board)" :class="{ active: board.id === selectedBoardId }">
           <span>{{ board.nickname }}</span>
-          <button v-if="board.is_owner" @click.stop="deleteBoard(board.id)" class="delete-board-btn">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-          </button>
+          <div class="board-actions">
+            <button v-if="board.is_owner" @click.stop="shareBoard(board.id)" class="share-board-btn" title="Compartilhar Lousa">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            </button>
+            <button v-if="board.is_owner" @click.stop="deleteBoard(board.id)" class="delete-board-btn" title="Deletar Lousa">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+            </button>
+          </div>
         </li>
       </ul>
       <div v-if="!userInfo?.is_guest" class="menu-footer">
@@ -151,6 +156,34 @@ const copyUserId = () => {
       copyButtonText.value = 'Copiar ID';
     }, 2000);
   });
+};
+
+const shareBoard = async (boardId) => {
+  if (!userInfo.value?.email) return;
+
+  const targetUserId = prompt("Digite o ID do usuário para convidar para esta lousa:");
+  if (!targetUserId || !targetUserId.trim()) {
+    return; // Usuário cancelou ou não digitou nada
+  }
+
+  try {
+    const response = await fetch(`${API_URL}/api/whiteboards/${boardId}/share`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requesting_user_email: userInfo.value.email,
+        target_user_id: targetUserId.trim(),
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Falha ao compartilhar lousa');
+    }
+    alert(data.message); // Exibe a mensagem de sucesso
+  } catch (error) {
+    console.error("Erro ao compartilhar lousa:", error);
+    alert(`Erro: ${error.message}`);
+  }
 };
 
 onMounted(() => {
@@ -344,6 +377,13 @@ watch(userInfo, (newUserInfo) => {
     color: #1967d2;
 }
 
+.board-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.share-board-btn,
 .delete-board-btn {
   background: none;
   border: none;
@@ -354,9 +394,19 @@ watch(userInfo, (newUserInfo) => {
   display: none; /* Oculto por padrão */
   transition: background-color 0.2s, color 0.2s;
 }
+
+.menu-content li:hover .share-board-btn,
 .menu-content li:hover .delete-board-btn {
-  display: block;
+  display: flex; /* Mudei para flex para centralizar o ícone */
+  align-items: center;
+  justify-content: center;
 }
+
+.share-board-btn:hover {
+    color: #1a73e8;
+    background-color: #e8f0fe;
+}
+
 .delete-board-btn:hover {
   color: #d9534f;
   background-color: #fce8e6;

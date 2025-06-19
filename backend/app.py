@@ -341,6 +341,45 @@ def create_whiteboard():
         print(f"Erro ao criar lousa no banco de dados: {e}")
         return jsonify({"message": "Erro interno ao criar a lousa."}), 500
 
+@app.route('/api/whiteboards/<int:board_id>/share', methods=['POST'])
+def share_whiteboard(board_id):
+    """Compartilha uma lousa com outro usuário."""
+    data = request.get_json()
+    requesting_user_email = data.get('requesting_user_email')
+    target_user_id = data.get('target_user_id')
+
+    if not requesting_user_email or not target_user_id:
+        return jsonify({"message": "Email do solicitante e ID do alvo são obrigatórios."}), 400
+
+    # Validações
+    board = Whiteboard.query.get(board_id)
+    if not board:
+        return jsonify({"message": "Lousa não encontrada."}), 404
+
+    requesting_user = User.query.filter_by(email=requesting_user_email).first()
+    if not requesting_user:
+        return jsonify({"message": "Usuário solicitante não encontrado."}), 404
+
+    if board.owner_id != requesting_user.id:
+        return jsonify({"message": "Apenas o dono pode compartilhar a lousa."}), 403
+
+    target_user = User.query.get(target_user_id)
+    if not target_user:
+        return jsonify({"message": "O usuário que você tentou convidar não foi encontrado."}), 404
+        
+    if target_user in board.accessible_by_users:
+        return jsonify({"message": "Este usuário já tem acesso à lousa."}), 409 # 409 Conflict
+
+    try:
+        board.accessible_by_users.append(target_user)
+        db.session.commit()
+        print(f"Lousa {board.id} compartilhada com sucesso com o usuário {target_user.name} (ID: {target_user.id})")
+        return jsonify({"message": f"Lousa '{board.nickname}' compartilhada com {target_user.name}."})
+    except Exception as e:
+        db.session.rollback()
+        print(f"Erro ao compartilhar lousa: {e}")
+        return jsonify({"message": "Erro interno ao compartilhar a lousa."}), 500
+
 @app.route('/api/whiteboards/<int:board_id>', methods=['DELETE'])
 def delete_whiteboard(board_id):
     user_email = request.args.get('email')
