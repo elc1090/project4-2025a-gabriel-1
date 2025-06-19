@@ -3,15 +3,11 @@
     <div class="login-box">
       <h1>Bem-vindo à Lousa Colaborativa</h1>
       <p>Faça login para continuar ou entre como visitante</p>
-      
-      <!-- Div essencial para o Google Sign-In -->
       <div id="g_id_onload"
            :data-client_id="googleClientId"
            data-callback="handleGoogleSignIn"
            data-auto_select="false">
       </div>
-      
-      <!-- Botão de Login do Google -->
       <div class="g_id_signin"
            data-type="standard"
            data-size="large"
@@ -20,13 +16,10 @@
            data-shape="rectangular"
            data-logo_alignment="left">
       </div>
-      
-      <!-- Seção de Login de Visitante -->
       <div class="guest-login">
         <input v-model="guestName" type="text" placeholder="Digite seu nome de visitante" class="guest-name-input" @keyup.enter="handleGuestLogin" />
         <button @click="handleGuestLogin" class="guest-btn">Entrar como Visitante</button>
       </div>
-      
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
     </div>
   </div>
@@ -100,7 +93,6 @@ onMounted(() => {
       errorMessage.value = "Erro de configuração do cliente. O login não funcionará.";
   }
   
-  // Anexa a função de callback ao objeto window para que o script do Google possa chamá-la.
   window.handleGoogleSignIn = handleGoogleSignIn;
 });
 
@@ -121,24 +113,20 @@ onMounted(() => {
   padding: 40px;
   border-radius: 8px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
 }
 
 h1 {
   font-size: 24px;
-  margin-bottom: 0;
+  margin-bottom: 10px;
 }
 
 p {
-  margin-bottom: 0;
+  margin-bottom: 20px;
   color: #666;
 }
 
 .error-message {
-  color: #D8000C;
+  color: #D8000C; /* Vermelho para erro */
   margin-top: 15px;
 }
 
@@ -149,7 +137,6 @@ p {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: 100%;
 }
 
 .guest-name-input {
@@ -161,7 +148,7 @@ p {
 }
 
 .guest-btn {
-  background-color: #4CAF50;
+  background-color: #4CAF50; /* Um verde para diferenciar */
   color: white;
   border: none;
   padding: 10px 24px;

@@ -176,35 +176,43 @@ watch(userInfo, (newUserInfo) => {
   top: 10px;
   left: 10px;
   z-index: 100;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 .menu-toggle-btn {
-  background-color: #fff;
-  border: 1px solid #ccc;
+  background-color: #ffffff;
+  border: 1px solid #e0e0e0;
   border-radius: 50%;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   cursor: pointer;
   display: flex;
   justify-content: center;
   align-items: center;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  color: #3c4043;
+  transition: background-color 0.2s, box-shadow 0.2s;
 }
 .menu-toggle-btn:hover {
-  background-color: #f5f5f5;
+  background-color: #f8f9fa;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+}
+.menu-toggle-btn svg {
+  stroke: currentColor;
 }
 
 .menu-content {
   position: absolute;
-  top: 50px;
+  top: 55px;
   left: 0;
-  background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  width: 280px;
+  background-color: #f8f9fa;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  width: 290px;
   max-height: calc(100vh - 70px);
   display: flex;
   flex-direction: column;
+  color: #202124;
 }
 
 .menu-header {
@@ -212,7 +220,7 @@ watch(userInfo, (newUserInfo) => {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid #e0e0e0;
 }
 
 .close-btn {
@@ -222,6 +230,10 @@ watch(userInfo, (newUserInfo) => {
   cursor: pointer;
   padding: 0;
   line-height: 1;
+  color: #5f6368;
+}
+.close-btn:hover {
+  color: #202124;
 }
 
 .user-info {
@@ -237,6 +249,7 @@ watch(userInfo, (newUserInfo) => {
   height: 40px;
   border-radius: 50%;
   object-fit: cover;
+  border: 2px solid #e0e0e0;
 }
 
 .user-details {
@@ -247,11 +260,12 @@ watch(userInfo, (newUserInfo) => {
 }
 
 .user-name {
-  font-weight: bold;
+  font-weight: 600;
   font-size: 15px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: #202124;
 }
 
 .user-id-container {
@@ -262,44 +276,48 @@ watch(userInfo, (newUserInfo) => {
 
 .user-id-label {
   font-size: 12px;
-  color: #666;
-  font-weight: bold;
+  color: #5f6368;
+  font-weight: 500;
 }
 
 .user-id-value {
   font-size: 12px;
-  color: #666;
+  color: #5f6368;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
 }
 
 .copy-btn {
   background: none;
   border: none;
   cursor: pointer;
-  padding: 0;
+  padding: 2px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #888;
+  color: #5f6368;
+  border-radius: 4px;
 }
 .copy-btn:hover {
-  color: #000;
+  background-color: #e0e0e0;
+  color: #202124;
 }
 
 .boards-title {
-  padding: 12px 16px 4px 16px;
+  padding: 16px 16px 8px 16px;
   margin: 0;
-  font-size: 16px;
-  font-weight: bold;
-  color: #333;
+  font-size: 14px;
+  font-weight: 600;
+  color: #5f6368;
+  text-transform: uppercase;
 }
 
 .menu-content ul {
   list-style: none;
   margin: 0;
-  padding: 8px 0;
+  padding: 0 8px 8px 8px;
   overflow-y: auto;
 }
 
@@ -307,58 +325,79 @@ watch(userInfo, (newUserInfo) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 16px;
+  padding: 10px 12px;
   cursor: pointer;
   font-size: 14px;
+  border-radius: 6px;
+  transition: background-color 0.2s;
+  color: #3c4043;
 }
 .menu-content li:hover {
-  background-color: #f5f5f5;
+  background-color: #e8eaed;
 }
 .menu-content li.active {
   background-color: #e8f0fe;
-  font-weight: bold;
+  color: #1967d2;
+  font-weight: 600;
+}
+.menu-content li.active .delete-board-btn {
+    color: #1967d2;
 }
 
 .delete-board-btn {
   background: none;
   border: none;
   cursor: pointer;
-  color: #888;
-  padding: 2px;
-  display: none;
+  color: #5f6368;
+  padding: 4px;
+  border-radius: 50%;
+  display: none; /* Oculto por padrão */
+  transition: background-color 0.2s, color 0.2s;
 }
 .menu-content li:hover .delete-board-btn {
-  display: block; /* Mostra o botão no hover do item da lista */
+  display: block;
 }
 .delete-board-btn:hover {
   color: #d9534f;
+  background-color: #fce8e6;
 }
 
 .menu-footer {
   padding: 12px 16px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid #e0e0e0;
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 10px;
 }
 .menu-footer input {
   flex-grow: 1;
-  padding: 8px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
+  padding: 9px 12px;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  background-color: #fff;
 }
+.menu-footer input:focus {
+  outline: none;
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+}
+
 .menu-footer button {
-  padding: 8px 12px;
+  padding: 9px 12px;
   border: none;
-  background-color: #4285f4;
+  background-color: #1a73e8;
   color: white;
-  border-radius: 4px;
+  border-radius: 8px;
   cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s;
 }
 .menu-footer button:hover {
-  background-color: #357ae8;
+  background-color: #185abc;
 }
 .menu-footer button:disabled {
-  background-color: #ccc;
+  background-color: #dadce0;
+  color: #80868b;
   cursor: not-allowed;
 }
 </style> 
