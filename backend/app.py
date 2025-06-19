@@ -9,6 +9,7 @@ from flask_cors import CORS
 import os
 import datetime
 import json
+import uuid
 
 from google.oauth2 import id_token
 from google.auth.transport import requests
@@ -55,6 +56,7 @@ class User(db.Model):
     email = db.Column(db.String(255), unique=True, nullable=False)
     profile_pic = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    is_guest = db.Column(db.Boolean, default=False, nullable=False)
 
     owned_whiteboards = db.relationship('Whiteboard', backref='owner', lazy='dynamic')
     accessible_whiteboards = db.relationship('Whiteboard', secondary=whiteboard_access, back_populates='accessible_by_users', lazy='dynamic')
@@ -127,6 +129,8 @@ def status_api():
     return jsonify(message="API Flask está rodando!", database_status=db_status)
 
 DEFAULT_BOARD_ID = 1
+# Dicionário para rastrear SIDs de convidados e seus user_ids
+guest_sids = {}
 
 @socketio.on('connect')
 def handle_connect():
@@ -148,6 +152,11 @@ def handle_join_board(data):
     if not user:
         print(f"Usuário com email {user_email} não encontrado.")
         return
+
+    # Se o usuário for um convidado, rastreia seu SID para limpeza posterior
+    if user.is_guest:
+        guest_sids[request.sid] = user.id
+        print(f"Convidado {user.name} (SID: {request.sid}) rastreado para limpeza.")
 
     board = Whiteboard.query.get(board_id)
     # Verifica se o usuário tem acesso à lousa
@@ -184,8 +193,36 @@ def handle_join_board(data):
 @socketio.on('disconnect')
 def handle_disconnect():
     """Chamado quando um cliente se desconecta."""
-    # Não precisa fazer leave_room explicitamente aqui, o SocketIO geralmente cuida disso.
-    print(f"Cliente {request.sid} desconectado")
+    sid = request.sid
+    print(f"Cliente {sid} desconectado")
+
+    # Se o SID pertencer a um convidado, remove o usuário do banco de dados.
+    if sid in guest_sids:
+        user_id_to_delete = guest_sids[sid]
+        print(f"SID {sid} pertence a um convidado. Tentando limpar o usuário com ID {user_id_to_delete}...")
+        
+        try:
+            user = User.query.get(user_id_to_delete)
+            if user:
+                # Importante: para deletar um usuário, precisamos primeiro remover as associações
+                # ou configurar o banco de dados para fazer isso em cascata.
+                # Como um convidado não pode ser dono de uma lousa, só precisamos nos preocupar
+                # com a tabela de acesso. A SQLAlchemy geralmente cuida disso se o relacionamento
+                # estiver configurado corretamente, mas vamos ser explícitos.
+                user.accessible_whiteboards.clear()
+                db.session.commit() # Salva a remoção da associação
+
+                db.session.delete(user)
+                db.session.commit()
+                print(f"Usuário convidado {user.name} (ID: {user_id_to_delete}) foi removido com sucesso.")
+            else:
+                print(f"Usuário convidado com ID {user_id_to_delete} não encontrado para exclusão.")
+        except Exception as e:
+            db.session.rollback()
+            print(f"Erro ao tentar remover o usuário convidado {user_id_to_delete}: {e}")
+        
+        # Remove o sid do dicionário de rastreamento
+        del guest_sids[sid]
 
 
 @socketio.on('draw_stroke_event')
@@ -409,6 +446,54 @@ def google_auth():
     except Exception as e:
         print(f"Erro inesperado durante a autenticação: {e}")
         db.session.rollback()
+        return jsonify({"message": "An unexpected error occurred"}), 500
+
+@app.route('/api/auth/guest', methods=['POST'])
+def guest_auth():
+    """Cria um usuário convidado temporário."""
+    try:
+        # 1. Criar o usuário convidado
+        guest_uuid = str(uuid.uuid4())
+        guest_id = f"guest_{guest_uuid}"
+        guest_email = f"{guest_id}@guest.local"
+        # Gera um número de 4 dígitos para o nome
+        guest_name = f"Visitante {str(uuid.uuid4())[:4]}"
+        
+        user = User(
+            id=guest_id,
+            email=guest_email,
+            name=guest_name,
+            # Uma imagem de perfil padrão para convidados
+            profile_pic='https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y',
+            is_guest=True
+        )
+        db.session.add(user)
+
+        # 2. Garantir que a lousa padrão exista e dar acesso
+        default_board = Whiteboard.query.get(DEFAULT_BOARD_ID)
+        if not default_board:
+            # Se a lousa principal não existir, o primeiro usuário (mesmo que seja convidado) a cria.
+            default_board = Whiteboard(id=DEFAULT_BOARD_ID, nickname="Lousa Principal", owner_id=user.id)
+            db.session.add(default_board)
+        
+        user.accessible_whiteboards.append(default_board)
+        
+        db.session.commit()
+        print(f"Usuário convidado criado: {user.name}")
+
+        return jsonify({
+            "message": "Login de convidado bem-sucedido",
+            "user": {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "profile_pic": user.profile_pic,
+                "is_guest": user.is_guest
+            }
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"Erro inesperado durante a criação de convidado: {e}")
         return jsonify({"message": "An unexpected error occurred"}), 500
 
 

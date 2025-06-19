@@ -2,7 +2,7 @@
   <div class="login-container">
     <div class="login-box">
       <h1>Bem-vindo à Lousa Colaborativa</h1>
-      <p>Faça login para continuar</p>
+      <p>Faça login para continuar ou entre como visitante</p>
       <div id="g_id_onload"
            :data-client_id="googleClientId"
            data-callback="handleGoogleSignIn"
@@ -16,6 +16,9 @@
            data-shape="rectangular"
            data-logo_alignment="left">
       </div>
+      <div class="guest-login">
+        <button @click="handleGuestLogin" class="guest-btn">Entrar como Visitante</button>
+      </div>
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
     </div>
   </div>
@@ -28,15 +31,12 @@ const emit = defineEmits(['login-success']);
 
 const errorMessage = ref('');
 const googleClientId = ref(import.meta.env.VITE_GOOGLE_CLIENT_ID);
+const apiUrl = import.meta.env.VITE_API_URL || 'https://project3-2025a-gabriel.onrender.com';
 
 const handleGoogleSignIn = async (response) => {
   console.log("Recebida credencial do Google:", response.credential);
   errorMessage.value = '';
   try {
-    // A URL da API deve ser a URL do seu backend, que pode estar rodando localmente ou em um servidor.
-    // Usar um caminho relativo /api/auth/google só funciona se o servidor de desenvolvimento do Vite (ou um servidor web de produção)
-    // estiver configurado para fazer proxy das requisições para o backend Flask.
-    const apiUrl = import.meta.env.VITE_API_URL || 'https://project3-2025a-gabriel.onrender.com'; // Use a variável de ambiente ou um caminho relativo
     const res = await fetch(`${apiUrl}/api/auth/google`, {
       method: 'POST',
       headers: {
@@ -59,15 +59,34 @@ const handleGoogleSignIn = async (response) => {
   }
 };
 
+const handleGuestLogin = async () => {
+  console.log("Tentando login como convidado...");
+  errorMessage.value = '';
+  try {
+    const res = await fetch(`${apiUrl}/api/auth/guest`, {
+      method: 'POST',
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.message || 'Falha no login como convidado');
+    }
+
+    console.log('Login como convidado bem-sucedido:', data.user);
+    emit('login-success', data.user);
+  } catch (error) {
+    console.error('Erro ao fazer login como convidado:', error);
+    errorMessage.value = `Erro: ${error.message}.`;
+  }
+};
+
 onMounted(() => {
   if (!googleClientId.value) {
       console.error("VITE_GOOGLE_CLIENT_ID não está definida no frontend.");
       errorMessage.value = "Erro de configuração do cliente. O login não funcionará.";
   }
   
-  // O script do Google espera que a função de callback esteja no escopo global (window).
-  // No <script setup>, as funções não são expostas automaticamente.
-  // Precisamos anexá-la explicitamente ao objeto window.
   window.handleGoogleSignIn = handleGoogleSignIn;
 });
 
@@ -103,5 +122,29 @@ p {
 .error-message {
   color: #D8000C; /* Vermelho para erro */
   margin-top: 15px;
+}
+
+.guest-login {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.guest-btn {
+  background-color: #4CAF50; /* Um verde para diferenciar */
+  color: white;
+  border: none;
+  padding: 10px 24px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.guest-btn:hover {
+  background-color: #45a049;
 }
 </style> 

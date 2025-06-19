@@ -16,7 +16,7 @@
           </button>
         </li>
       </ul>
-      <div class="menu-footer">
+      <div v-if="!userInfo?.is_guest" class="menu-footer">
         <input v-model="newBoardName" placeholder="Apelido da nova lousa" @keyup.enter="createBoard"/>
         <button @click="createBoard" :disabled="!newBoardName.trim()">+ Criar Lousa</button>
       </div>
