@@ -5,9 +5,16 @@
     </button>
     <div v-if="isMenuOpen" class="menu-content" @click.stop>
       <div class="menu-header">
-        <h3>Minhas Lousas</h3>
+        <div class="user-info">
+          <img :src="userInfo?.profile_pic" alt="Avatar" class="user-avatar">
+          <div class="user-details">
+            <span class="user-name">{{ userInfo?.name }}</span>
+            <span class="user-id">{{ userInfo?.id }}</span>
+          </div>
+        </div>
         <button @click="closeMenu" class="close-btn">&times;</button>
       </div>
+      <h3 class="boards-title">Minhas Lousas</h3>
       <ul>
         <li v-for="board in boards" :key="board.id" @click="selectBoard(board)" :class="{ active: board.id === selectedBoardId }">
           <span>{{ board.nickname }}</span>
@@ -180,10 +187,7 @@ watch(userInfo, (newUserInfo) => {
   padding: 12px 16px;
   border-bottom: 1px solid #eee;
 }
-.menu-header h3 {
-  margin: 0;
-  font-size: 16px;
-}
+
 .close-btn {
   background: none;
   border: none;
@@ -191,6 +195,51 @@ watch(userInfo, (newUserInfo) => {
   cursor: pointer;
   padding: 0;
   line-height: 1;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-grow: 1;
+  overflow: hidden;
+}
+
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.user-details {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.user-name {
+  font-weight: bold;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-id {
+  font-size: 12px;
+  color: #666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.boards-title {
+  padding: 12px 16px 4px 16px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: bold;
+  color: #333;
 }
 
 .menu-content ul {
