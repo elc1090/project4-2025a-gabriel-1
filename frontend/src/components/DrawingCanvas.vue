@@ -88,20 +88,14 @@ const menu = reactive({
   y: 0,
 });
 
-const longPressDuration = 700;
+const longPressDuration = 500;
 let longPressTimer = null;
-let touchStartCoords = { x: 0, y: 0, time: 0 };
+let touchStartCoords = {};
 const longPressMoveThreshold = 10;
 
 let isMultiTouching = false;
-let initialGestureInfo = {
-  pinchDistance: 0,
-  midpoint: { x: 0, y: 0 },
-  worldMidpoint: { x: 0, y: 0},
-  offsetX: 0,
-  offsetY: 0,
-  scale: 1,
-};
+let initialGestureInfo = {};
+let potentialDrawingStart = false;
 
 const canUndo = computed(() => {
   return strokes.value.some(s => s.user_id === userInfo.value?.id);
@@ -472,57 +466,148 @@ function showContextMenuAt(screenX, screenY) {
 
 function handleTouchStart(event) {
   event.preventDefault();
-  isDrawing = true;
+  menu.visible = false;
+  const touches = event.touches;
   
-  redoStack.value = [];
+  if (touches.length === 1) {
+    isMultiTouching = false;
+    potentialDrawingStart = true;
+    const touch = touches[0];
+    touchStartCoords = { x: touch.clientX, y: touch.clientY, time: Date.now() };
 
-  const touch = event.touches[0];
-  const { x, y } = screenToWorldCoordinates(touch.clientX, touch.clientY);
-  
-  currentTempStrokeId = 'temp_' + Date.now();
+    clearTimeout(longPressTimer);
+    longPressTimer = setTimeout(() => {
+      if (potentialDrawingStart && !isMultiTouching) {
+        showContextMenuAt(touchStartCoords.x, touchStartCoords.y);
+      }
+      longPressTimer = null;
+    }, longPressDuration);
 
-  const newStroke = {
-    id: currentTempStrokeId,
-    user_id: userInfo.value.id,
-    points: [{ x, y }],
-    color: drawingSettings.color,
-    lineWidth: drawingSettings.lineWidth,
-    is_temp: true,
-  };
-  strokes.value.push(newStroke);
-  redraw();
+  } else if (touches.length >= 2) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+    potentialDrawingStart = false;
+    isDrawing = false;
+    
+    if (currentTempStrokeId) {
+        const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
+        if (index !== -1) strokes.value.splice(index, 1);
+        currentTempStrokeId = null;
+        redraw();
+    }
+    
+    isMultiTouching = true;
+    const t1 = touches[0];
+    const t2 = touches[1];
+    initialGestureInfo.pinchDistance = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+    
+    const rect = viewportCanvasRef.value.getBoundingClientRect();
+    const screenMidX = (t1.clientX - rect.left + t2.clientX - rect.left) / 2;
+    const screenMidY = (t1.clientY - rect.top + t2.clientY - rect.top) / 2;
+    
+    initialGestureInfo.worldMidpoint = screenToWorldCoordinates(screenMidX, screenMidY);
+  }
 }
 
 function handleTouchMove(event) {
   event.preventDefault();
-  if (!isDrawing) return;
+  const touches = event.touches;
+  
+  if (touches.length === 1 && !isMultiTouching) {
+    const touch = touches[0];
+    
+    if (potentialDrawingStart) {
+      const deltaX = touch.clientX - touchStartCoords.x;
+      const deltaY = touch.clientY - touchStartCoords.y;
 
-  const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
-  if (activeStroke) {
-    const touch = event.touches[0];
-    const { x, y } = screenToWorldCoordinates(touch.clientX, touch.clientY);
-    activeStroke.points.push({ x, y });
+      if (Math.hypot(deltaX, deltaY) > longPressMoveThreshold) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+        
+        if (!isDrawing) {
+           isDrawing = true;
+           potentialDrawingStart = false;
+           
+           redoStack.value = [];
+           const { x, y } = getCanvasCoordinates(touch);
+           currentTempStrokeId = 'temp_' + Date.now();
+           const newStroke = {
+                id: currentTempStrokeId,
+                user_id: userInfo.value.id,
+                points: [{ x, y }],
+                color: drawingSettings.color,
+                lineWidth: drawingSettings.lineWidth,
+                is_temp: true,
+            };
+            strokes.value.push(newStroke);
+            redraw();
+        }
+      }
+    }
+    
+    if (isDrawing) {
+      const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
+      if (activeStroke) {
+        const { x, y } = getCanvasCoordinates(touch);
+        activeStroke.points.push({ x, y });
+        redraw();
+      }
+    }
+  } else if (touches.length >= 2 && isMultiTouching) {
+    const t1 = touches[0];
+    const t2 = touches[1];
+    
+    const rect = viewportCanvasRef.value.getBoundingClientRect();
+    const currentScreenMidX = (t1.clientX - rect.left + t2.clientX - rect.left) / 2;
+    const currentScreenMidY = (t1.clientY - rect.top + t2.clientY - rect.top) / 2;
+    
+    viewportState.offsetX = currentScreenMidX - initialGestureInfo.worldMidpoint.x * viewportState.scale;
+    viewportState.offsetY = currentScreenMidY - initialGestureInfo.worldMidpoint.y * viewportState.scale;
+
+    const currentPinchDistance = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+    let scaleFactor = 1;
+    if (initialGestureInfo.pinchDistance > 0) {
+      scaleFactor = currentPinchDistance / initialGestureInfo.pinchDistance;
+    }
+    let newScale = viewportState.scale * scaleFactor;
+    newScale = Math.max(0.1, Math.min(newScale, 20));
+    
+    viewportState.offsetX += (initialGestureInfo.worldMidpoint.x * viewportState.scale) - (initialGestureInfo.worldMidpoint.x * newScale);
+    viewportState.offsetY += (initialGestureInfo.worldMidpoint.y * viewportState.scale) - (initialGestureInfo.worldMidpoint.y * newScale);
+    viewportState.scale = newScale;
+
+    initialGestureInfo.pinchDistance = currentPinchDistance;
+    initialGestureInfo.worldMidpoint = screenToWorldCoordinates(currentScreenMidX, currentScreenMidY);
+
     redraw();
   }
 }
 
 function handleTouchEnd(event) {
   event.preventDefault();
-  if (!isDrawing) return;
-  isDrawing = false;
+  clearTimeout(longPressTimer);
 
-  const finalStroke = strokes.value.find(s => s.id === currentTempStrokeId);
-
-  if (finalStroke && finalStroke.points.length > 1 && socket.value) {
-    socket.value.emit('draw_stroke_event', {
-      board_id: currentBoardId.value,
-      user_email: userInfo.value.email,
-      points: finalStroke.points,
-      color: finalStroke.color,
-      lineWidth: finalStroke.lineWidth,
-      temp_id: finalStroke.id,
-    });
+  if (isDrawing) {
+    const finalStroke = strokes.value.find(s => s.id === currentTempStrokeId);
+    if (finalStroke && finalStroke.points.length > 1 && socket.value) {
+      socket.value.emit('draw_stroke_event', {
+        board_id: currentBoardId.value,
+        user_email: userInfo.value?.email,
+        points: finalStroke.points,
+        color: finalStroke.color,
+        lineWidth: finalStroke.lineWidth,
+        temp_id: finalStroke.id,
+      });
+    } else if (finalStroke) {
+      const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
+      if (index !== -1) strokes.value.splice(index, 1);
+      redraw();
+    }
   }
+  
+  isDrawing = false;
+  isMultiTouching = false;
+  potentialDrawingStart = false;
   currentTempStrokeId = null;
 }
 
