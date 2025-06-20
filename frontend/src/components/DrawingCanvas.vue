@@ -22,11 +22,12 @@
     @mousedown="handleMouseDown"
     @mousemove="handleMouseMove"
     @mouseup="handleMouseUp"
-    @mouseout="handleMouseUp"
+    @mouseout="handleMouseOut"
     @wheel.prevent="handleWheel"
     @touchstart.prevent="handleTouchStart"
     @touchmove.prevent="handleTouchMove"
     @touchend="handleTouchEnd"
+    @touchcancel="handleTouchEnd"
     @contextmenu.prevent="showContextMenu"
     class="viewport-canvas"
   ></canvas>
@@ -334,57 +335,101 @@ function screenToWorldCoordinates(screenX, screenY) {
   };
 }
 
+function getCanvasCoordinates(event) {
+  const rect = viewportCanvasRef.value.getBoundingClientRect();
+  const screenX = event.clientX - rect.left;
+  const screenY = event.clientY - rect.top;
+  return screenToWorldCoordinates(screenX, screenY);
+}
+
 function handleMouseDown(event) {
-  if (event.button !== 0) return;
-  isDrawing = true;
-  
-  redoStack.value = [];
+  menu.visible = false;
 
-  const { x, y } = screenToWorldCoordinates(event.offsetX, event.offsetY);
-  
-  currentTempStrokeId = 'temp_' + Date.now();
+  if (event.button === 0) { 
+    isDrawing = true;
+    
+    redoStack.value = [];
 
-  const newStroke = {
-    id: currentTempStrokeId,
-    user_id: userInfo.value.id,
-    points: [{ x, y }],
-    color: drawingSettings.color,
-    lineWidth: drawingSettings.lineWidth,
-    is_temp: true,
-  };
+    const { x, y } = getCanvasCoordinates(event);
+    
+    currentTempStrokeId = 'temp_' + Date.now();
 
-  strokes.value.push(newStroke);
-  redraw();
+    const newStroke = {
+      id: currentTempStrokeId,
+      user_id: userInfo.value.id,
+      points: [{ x, y }],
+      color: drawingSettings.color,
+      lineWidth: drawingSettings.lineWidth,
+      is_temp: true,
+    };
+
+    strokes.value.push(newStroke);
+    redraw();
+  }
+  else if (event.button === 1) {
+    event.preventDefault();
+    viewportState.isPanning = true;
+    viewportState.lastPanX = event.clientX;
+    viewportState.lastPanY = event.clientY;
+  }
 }
 
 function handleMouseMove(event) {
-  if (!isDrawing) return;
-
-  const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
-  if (activeStroke) {
-    const { x, y } = screenToWorldCoordinates(event.offsetX, event.offsetY);
-    activeStroke.points.push({ x, y });
+  if (isDrawing) {
+    const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
+    if (activeStroke) {
+      const { x, y } = getCanvasCoordinates(event);
+      activeStroke.points.push({ x, y });
+      redraw();
+    }
+  }
+  else if (viewportState.isPanning) {
+    const dx = event.clientX - viewportState.lastPanX;
+    const dy = event.clientY - viewportState.lastPanY;
+    viewportState.offsetX += dx;
+    viewportState.offsetY += dy;
+    viewportState.lastPanX = event.clientX;
+    viewportState.lastPanY = event.clientY;
     redraw();
   }
 }
 
 function handleMouseUp(event) {
-  if (event.button !== 0 || !isDrawing) return;
-  isDrawing = false;
+  if (event.button === 0 && isDrawing) {
+    isDrawing = false;
+    const finalStroke = strokes.value.find(s => s.id === currentTempStrokeId);
 
-  const finalStroke = strokes.value.find(s => s.id === currentTempStrokeId);
-
-  if (finalStroke && finalStroke.points.length > 1 && socket.value) {
-    socket.value.emit('draw_stroke_event', {
-      board_id: currentBoardId.value,
-      user_email: userInfo.value?.email,
-      points: finalStroke.points,
-      color: finalStroke.color,
-      lineWidth: finalStroke.lineWidth,
-      temp_id: finalStroke.id,
-    });
+    if (finalStroke && finalStroke.points.length > 1 && socket.value) {
+      socket.value.emit('draw_stroke_event', {
+        board_id: currentBoardId.value,
+        user_email: userInfo.value?.email,
+        points: finalStroke.points,
+        color: finalStroke.color,
+        lineWidth: finalStroke.lineWidth,
+        temp_id: finalStroke.id,
+      });
+    } else if (finalStroke) {
+      const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
+      if (index !== -1) {
+        strokes.value.splice(index, 1);
+        redraw();
+      }
+    }
+    currentTempStrokeId = null;
   }
-  currentTempStrokeId = null;
+  
+  if (event.button === 1) {
+    viewportState.isPanning = false;
+  }
+}
+
+function handleMouseOut(event) {
+  if (isDrawing) {
+    handleMouseUp({ button: 0 }); 
+  }
+  if (viewportState.isPanning) {
+    viewportState.isPanning = false;
+  }
 }
 
 function handleWheel(event) {
