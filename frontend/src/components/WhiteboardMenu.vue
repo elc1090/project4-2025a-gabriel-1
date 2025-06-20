@@ -43,7 +43,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { userInfo } from '../services/userInfo';
 
 const props = defineProps({
@@ -190,7 +190,6 @@ onMounted(() => {
   // se o menu estiver visível por padrão em algumas visualizações.
 });
 
-// Se o usuário mudar (login/logout), podemos querer recarregar as lousas
 watch(userInfo, (newUserInfo) => {
   if (isMenuOpen.value && newUserInfo?.email) {
     fetchBoards();
@@ -199,21 +198,6 @@ watch(userInfo, (newUserInfo) => {
     isMenuOpen.value = false;
   }
 }, { deep: true });
-
-watch(isMenuOpen, (isOpen) => {
-  if (isOpen) {
-    // Adiciona um listener para fechar o menu ao clicar fora
-    document.addEventListener('click', closeMenu, true);
-  } else {
-    // Remove o listener quando o menu for fechado
-    document.removeEventListener('click', closeMenu, true);
-  }
-});
-
-onUnmounted(() => {
-  // Garante a limpeza do listener se o componente for destruído
-  document.removeEventListener('click', closeMenu, true);
-});
 
 </script>
 
