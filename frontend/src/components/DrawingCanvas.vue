@@ -219,8 +219,8 @@ onMounted(() => {
         strokes.value[tempStrokeIndex] = {
           id: strokeData.id,
           user_id: strokeData.user_id,
-          points: strokeData.points,
-          color: strokeData.color,
+      points: strokeData.points,
+      color: strokeData.color,
           lineWidth: strokeData.lineWidth,
         };
         redraw();
@@ -347,7 +347,7 @@ function getCanvasCoordinates(event) {
 function handleMouseDown(event) {
   menu.visible = false;
 
-  if (event.button === 0) { 
+  if (event.button === 0) {
     isDrawing = true;
     
     redoStack.value = [];
@@ -439,7 +439,7 @@ function handleMouseUp(event) {
     // Tenta reconhecer a forma antes de finalizar
     if (finalStroke.points.length > 4) { 
         // 1. Simplificar o traço com RDP para extrair os vértices principais
-        const simplifiedPoints = rdp(finalStroke.points, 4.0); // Epsilon ajustado
+        const simplifiedPoints = rdp(finalStroke.points, 2.0); // Epsilon ajustado (era 4.0)
         console.log(`Original points: ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
 
         // 2. Analisar a forma com base nos seus pontos simplificados
@@ -456,7 +456,7 @@ function handleMouseUp(event) {
                 
                 // Cria a forma perfeita
                 createPerfectShape(shape.name, finalStroke);
-                redraw();
+        redraw();
                 currentTempStrokeId = null;
                 return;
             }
@@ -543,7 +543,7 @@ function handleTouchStart(event) {
       }
       longPressTimer = null;
     }, longPressDuration);
-
+  
   } else if (touches.length >= 2) {
     clearTimeout(longPressTimer);
     longPressTimer = null;
@@ -573,17 +573,17 @@ function handleTouchStart(event) {
 function handleTouchMove(event) {
   event.preventDefault();
   const touches = event.touches;
-  
+
   if (touches.length === 1 && !isMultiTouching) {
     const touch = touches[0];
-    
+
     if (potentialDrawingStart) {
       const deltaX = touch.clientX - touchStartCoords.x;
       const deltaY = touch.clientY - touchStartCoords.y;
 
       if (Math.hypot(deltaX, deltaY) > longPressMoveThreshold) {
-        clearTimeout(longPressTimer);
-        longPressTimer = null;
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
         
         if (!isDrawing) {
            isDrawing = true;
@@ -596,12 +596,12 @@ function handleTouchMove(event) {
                 id: currentTempStrokeId,
                 user_id: userInfo.value.id,
                 points: [{ x, y }],
-                color: drawingSettings.color,
-                lineWidth: drawingSettings.lineWidth,
+            color: drawingSettings.color,
+            lineWidth: drawingSettings.lineWidth,
                 is_temp: true,
             };
             strokes.value.push(newStroke);
-            redraw();
+          redraw();
         }
       }
     }
@@ -682,7 +682,7 @@ function handleTouchEnd(event) {
 
     // Tenta reconhecer a forma
     if (finalStroke.points.length > 4) {
-        const simplifiedPoints = rdp(finalStroke.points, 4.0); // Epsilon ajustado
+        const simplifiedPoints = rdp(finalStroke.points, 2.0); // Epsilon ajustado (era 4.0)
         console.log(`Original points (Touch): ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
 
         const shape = analyzeShape(simplifiedPoints);
@@ -692,10 +692,10 @@ function handleTouchEnd(event) {
             if (shape.confidence > 0.85) {
                 const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
                 if (index !== -1) {
-                    strokes.value.splice(index, 1);
-                }
+        strokes.value.splice(index, 1);
+      }
                 createPerfectShape(shape.name, finalStroke);
-                redraw();
+      redraw(); 
             } else {
                 finalizeStroke(finalStroke);
             }
@@ -709,7 +709,7 @@ function handleTouchEnd(event) {
   
   // Limpa o estado para o próximo toque
   isDrawing = false;
-  isMultiTouching = false;
+    isMultiTouching = false;
   potentialDrawingStart = false;
   currentTempStrokeId = null;
 }
@@ -1011,7 +1011,7 @@ function analyzeShape(points) {
         const circularity = (4 * Math.PI * area) / (pathLength * pathLength);
         
         console.log("Circularity score:", circularity);
-        if (circularity > 0.7) {
+        if (circularity > 0.65) {
             return { name: 'circle', confidence: circularity };
         }
     }
