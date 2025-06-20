@@ -51,7 +51,7 @@ import ContextMenu from './ContextMenu.vue';
 import WhiteboardMenu from './WhiteboardMenu.vue';
 import { userInfo } from '../services/userInfo';
 import { io } from 'socket.io-client';
-import GestureRecognizer from '@2players/dollar1-unistroke-recognizer';
+import DollarRecognizer from '../services/dollarRecognizer.js';
 
 const props = defineProps({
   user: Object,
@@ -176,37 +176,38 @@ function handleBoardDeleted(deletedBoardId) {
 }
 
 // --- Configuração do Reconhecedor de Formas ---
-const recognizer = new GestureRecognizer({ defaultStrokes: false });
+const recognizer = new DollarRecognizer();
 // --- Fim da Configuração do Reconhecedor ---
 
 onMounted(() => {
   // Define os modelos de formas para o reconhecedor, usando templates normalizados.
-  // Estes templates são mais robustos do que os gerados proceduralmente.
   const templates = {
+    line: [ {X:20,Y:20}, {X:230,Y:230} ],
     triangle: [
-      { x: 130, y: 16 }, { x: 26, y: 244 }, { x: 234, y: 244 }, { x: 130, y: 16 }
+      { X: 130, Y: 16 }, { X: 26, Y: 244 }, { X: 234, Y: 244 }, { X: 130, Y: 16 }
     ],
     rectangle: [
-      { x: 30, y: 30 }, { x: 220, y: 30 }, { x: 220, y: 220 }, { x: 30, y: 220 }, { x: 30, y: 30 }
+      { X: 30, Y: 30 }, { X: 220, Y: 30 }, { X: 220, Y: 220 }, { X: 30, Y: 220 }, { X: 30, Y: 30 }
     ],
     circle: [
-      { x: 182, y: 92 }, { x: 172, y: 115 }, { x: 156, y: 135 }, { x: 135, y: 156 }, { x: 115, y: 172 },
-      { x: 92, y: 182 }, { x: 68, y: 182 }, { x: 44, y: 172 }, { x: 25, y: 156 }, { x: 14, y: 135 },
-      { x: 14, y: 115 }, { x: 25, y: 92 }, { x: 44, y: 68 }, { x: 68, y: 44 }, { x: 92, y: 25 },
-      { x: 115, y: 14 }, { x: 135, y: 14 }, { x: 156, y: 25 }, { x: 172, y: 44 }, { x: 182, y: 68 },
-      { x: 182, y: 92 }
+      { X: 182, Y: 92 }, { X: 172, Y: 115 }, { X: 156, Y: 135 }, { X: 135, Y: 156 }, { X: 115, Y: 172 },
+      { X: 92, Y: 182 }, { X: 68, Y: 182 }, { X: 44, Y: 172 }, { X: 25, Y: 156 }, { X: 14, Y: 135 },
+      { X: 14, Y: 115 }, { X: 25, Y: 92 }, { X: 44, Y: 68 }, { X: 68, Y: 44 }, { X: 92, Y: 25 },
+      { X: 115, Y: 14 }, { X: 135, Y: 14 }, { X: 156, Y: 25 }, { X: 172, Y: 44 }, { X: 182, Y: 68 },
+      { X: 182, Y: 92 }
     ],
      star: [
-        {x: 125, y: 20}, {x: 155, y: 80}, {x: 220, y: 80}, {x: 170, y: 130}, 
-        {x: 190, y: 190}, {x: 125, y: 150}, {x: 60, y: 190}, {x: 80, y: 130}, 
-        {x: 30, y: 80}, {x: 100, y: 80}, {x: 125, y: 20}
+        {X: 125, Y: 20}, {X: 155, Y: 80}, {X: 220, Y: 80}, {X: 170, Y: 130}, 
+        {X: 190, Y: 190}, {X: 125, Y: 150}, {X: 60, Y: 190}, {X: 80, Y: 130}, 
+        {X: 30, Y: 80}, {X: 100, Y: 80}, {X: 125, Y: 20}
     ]
   };
 
-  recognizer.add('triangle', templates.triangle);
-  recognizer.add('rectangle', templates.rectangle);
-  recognizer.add('circle', templates.circle);
-  recognizer.add('star', templates.star);
+  recognizer.AddUnistroke('line', templates.line);
+  recognizer.AddUnistroke('triangle', templates.triangle);
+  recognizer.AddUnistroke('rectangle', templates.rectangle);
+  recognizer.AddUnistroke('circle', templates.circle);
+  recognizer.AddUnistroke('star', templates.star);
   
   setupViewportAndWorld();
   window.addEventListener('resize', setupViewportAndWorld);
@@ -471,26 +472,24 @@ function handleMouseUp(event) {
     if (!finalStroke) return;
 
     // Tenta reconhecer a forma antes de finalizar
-    if (finalStroke.points.length > 10) { 
-        const result = recognizer.recognize(finalStroke.points, true);
+    if (finalStroke.points.length > 5) { 
+        // Converter pontos para o formato {X, Y} que o nosso reconhecedor espera
+        const pointsForRecognition = finalStroke.points.map(p => ({ X: p.x, Y: p.y }));
+        const result = recognizer.Recognize(pointsForRecognition, true); // Usar protractor (melhor para ângulos)
 
-        if (result && typeof result === 'object' && result.name && result.score) {
-            console.log(`Shape recognized: ${result.name} with score ${result.score}`);
-            if (result.score > 0.65) { // Limiar de confiança ajustado
-                // Remove o traço desenhado
-                const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-                if (index !== -1) {
-                    strokes.value.splice(index, 1);
-                }
-                
-                // Cria a forma perfeita
-                createPerfectShape(result.name, finalStroke);
-                redraw();
-                currentTempStrokeId = null;
-                return; 
+        console.log(`Shape recognized: ${result.Name} with score ${result.Score}`);
+        if (result.Score > 0.80) { // Limiar de confiança
+            // Remove o traço desenhado
+            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
+            if (index !== -1) {
+                strokes.value.splice(index, 1);
             }
-        } else {
-             console.log('Recognition failed or result is not in the expected format. Received:', result);
+            
+            // Cria a forma perfeita
+            createPerfectShape(result.Name, finalStroke);
+            redraw();
+            currentTempStrokeId = null;
+            return; 
         }
     }
 
@@ -712,23 +711,19 @@ function handleTouchEnd(event) {
     }
 
     // Tenta reconhecer a forma
-    if (finalStroke.points.length > 10) {
-        const result = recognizer.recognize(finalStroke.points, true);
+    if (finalStroke.points.length > 5) {
+        const pointsForRecognition = finalStroke.points.map(p => ({ X: p.x, Y: p.y }));
+        const result = recognizer.Recognize(pointsForRecognition, true);
         
-        if (result && typeof result === 'object' && result.name && result.score) {
-            console.log(`Shape recognized (Touch): ${result.name} with score ${result.score}`);
-            if (result.score > 0.65) { // Limiar de confiança ajustado
-                const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-                if (index !== -1) {
-                    strokes.value.splice(index, 1);
-                }
-                createPerfectShape(result.name, finalStroke);
-                redraw();
-            } else {
-                finalizeStroke(finalStroke);
+        console.log(`Shape recognized (Touch): ${result.Name} with score ${result.Score}`);
+        if (result.Score > 0.80) {
+            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
+            if (index !== -1) {
+                strokes.value.splice(index, 1);
             }
+            createPerfectShape(result.Name, finalStroke);
+            redraw();
         } else {
-            console.log('Recognition failed or result is not in the expected format. Received:', result);
             finalizeStroke(finalStroke);
         }
     } else {
@@ -823,8 +818,11 @@ const createPerfectShape = (shapeName, originalStroke) => {
 
     let perfectPoints = [];
     switch (shapeName) {
+        case 'line':
+            perfectPoints = [ { x: minX, y: minY }, { x: maxX, y: maxY } ];
+            break;
         case 'circle':
-            perfectPoints = createPolygon(32, cx, cy, radius); // Círculo com 32 lados
+            perfectPoints = createPolygon(32, cx, cy, radius);
             break;
         case 'rectangle':
             perfectPoints = [
