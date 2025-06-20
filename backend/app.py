@@ -269,7 +269,7 @@ def handle_draw_stroke_event(data):
             'points': data['points']
         }
         room = f"board_{board_id}"
-        emit('stroke_received', stroke_data_for_broadcast, room=room) # Envia para todos na sala
+        socketio.emit('stroke_received', stroke_data_for_broadcast, to=room) # Envia para todos na sala
         
         print(f"Traço salvo no BD com ID {new_stroke.id} para a lousa {board_id}")
     except Exception as e:
@@ -308,7 +308,7 @@ def handle_undo(data):
         db.session.commit()
         
         room = f"board_{board_id}"
-        emit('stroke_removed', {'stroke_id': stroke_id_to_remove, 'board_id': board_id}, room=room)
+        socketio.emit('stroke_removed', {'stroke_id': stroke_id_to_remove, 'board_id': board_id}, to=room)
         print(f"Usuário {user.name} desfez o traço {stroke_id_to_remove}")
 
 @socketio.on('redo_request')
@@ -344,7 +344,7 @@ def handle_redo(data):
             'points': json.loads(restored_stroke.points_json)
         }
         room = f"board_{board_id}"
-        emit('stroke_received', stroke_data_for_broadcast, room=room)
+        socketio.emit('stroke_received', stroke_data_for_broadcast, to=room)
         print(f"Usuário {user.name} refez um traço, novo ID: {restored_stroke.id}")
     except Exception as e:
         db.session.rollback()

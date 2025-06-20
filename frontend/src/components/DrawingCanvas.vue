@@ -1,18 +1,20 @@
 <template>
   <div class="canvas-ui-container">
-    <WhiteboardMenu
-      :selected-board-id="currentBoardId"
-      @board-selected="handleBoardSelected"
-      @board-created="handleBoardSelected"
-      @board-deleted="handleBoardDeleted"
-    />
-    <div class="undo-redo-container">
-      <button @click="undo" :disabled="!canUndo" title="Desfazer (Ctrl+Z)">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-      </button>
-      <button @click="redo" :disabled="!canRedo" title="Refazer (Ctrl+Y)">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-      </button>
+    <div class="left-controls">
+      <WhiteboardMenu
+        :selected-board-id="currentBoardId"
+        @board-selected="handleBoardSelected"
+        @board-created="handleBoardSelected"
+        @board-deleted="handleBoardDeleted"
+      />
+      <div class="undo-redo-container">
+        <button @click="undo" :disabled="!canUndo" title="Desfazer (Ctrl+Z)">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-corner-up-left"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg>
+        </button>
+        <button @click="redo" :disabled="!canRedo" title="Refazer (Ctrl+Y)">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-corner-up-right"><polyline points="15 14 20 9 15 4"></polyline><path d="M4 20v-7a4 4 0 0 1 4-4h12"></path></svg>
+        </button>
+      </div>
     </div>
   </div>
   <canvas
@@ -676,62 +678,54 @@ function getDistance(p1, p2) {
   position: absolute;
   top: 10px;
   left: 10px;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
   z-index: 100;
+}
+
+.left-controls {
+  display: flex;
+  align-items: flex-start; /* Alinha os itens no topo */
+  gap: 10px;
 }
 
 .undo-redo-container {
   display: flex;
-  flex-direction: column;
+  flex-direction: column; /* Organiza os botões verticalmente */
   gap: 8px;
-  padding-top: 1px; /* Alinhamento visual com o botão de menu */
+  /* O alinhamento com o WhiteboardMenu já é feito pelo flex-start do container pai */
 }
 
 .undo-redo-container button {
   background-color: #ffffff;
-  border: 1px solid #e0e0e0;
-  border-radius: 50%;
-  width: 44px;
-  height: 44px;
+  border: 1px solid #dadce0;
+  border-radius: 8px; /* Cantos levemente arredondados */
+  width: 40px; /* Tamanho ajustado */
+  height: 40px;
   cursor: pointer;
   display: flex;
   justify-content: center;
   align-items: center;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 3px rgba(60,64,67,0.15);
   color: #3c4043;
-  transition: background-color 0.2s, box-shadow 0.2s;
+  transition: background-color 0.2s, box-shadow 0.2s, border-color 0.2s;
 }
 
 .undo-redo-container button:hover:not(:disabled) {
   background-color: #f8f9fa;
-  box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+  border-color: #d2d5d8;
+  box-shadow: 0 1px 4px rgba(60,64,67,0.2);
 }
 
 .undo-redo-container button:disabled {
   color: #9e9e9e;
   cursor: not-allowed;
   background-color: #f5f5f5;
+  box-shadow: none;
 }
 
-/* Substituir os SVGs que usei de placeholder pelos corretos */
-.undo-redo-container button:first-child svg { /* Undo */
-  transform: scaleX(-1) rotate(90deg);
-}
-.undo-redo-container button:last-child svg { /* Redo */
-   transform: rotate(90deg);
-}
-
-
-/* Adicione estilos se necessário, por exemplo, para o container */
 .viewport-canvas {
   border: 1px solid #505050;
-  cursor: crosshair;
-  background-color: #777;
+  background-color: #f0f0f0;
   display: block;
-  touch-action: none;
-  box-shadow: 0 0 10px rgba(0,0,0,0.3);
-  margin: auto;
+  touch-action: none; /* Previne o scroll do navegador em touch screens */
 }
 </style>
