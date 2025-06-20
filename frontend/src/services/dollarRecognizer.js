@@ -153,9 +153,10 @@ function RotateBy(points, radians) {
 function ScaleTo(points, size) {
 	var B = BoundingBox(points);
 	var newpoints = new Array();
+	var maxDim = Math.max(B.Width, B.Height); // Use a dimensão maior para a escala
 	for (var i = 0; i < points.length; i++) {
-		var qx = points[i].X * (size / B.Width);
-		var qy = points[i].Y * (size / B.Height);
+		var qx = points[i].X * (size / maxDim); // Aplica a mesma proporção em X
+		var qy = points[i].Y * (size / maxDim); // e em Y para manter o aspecto
 		newpoints[newpoints.length] = new Point(qx, qy);
 	}
 	return newpoints;
