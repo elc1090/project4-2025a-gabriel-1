@@ -38,37 +38,19 @@
         <input v-model="newBoardName" placeholder="Apelido da nova lousa" @keyup.enter="createBoard"/>
         <button @click="createBoard" :disabled="!newBoardName.trim()">+ Criar Lousa</button>
       </div>
-      <div class="tools-section">
-        <div class="tool-group">
-          <button class="tool-button active" title="Pincel">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-          </button>
-          <button class="tool-button" title="Borracha">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21H7Z"/><path d="M22 2 17 7"/><path d="M14 11 9 16"/></svg>
-          </button>
-          <button 
-            @click="$emit('toggle-shape-recognition', !shapeRecognitionEnabled)"
-            :class="{ 'tool-button': true, 'active': shapeRecognitionEnabled }"
-            title="Reconhecimento de Formas"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18"/></svg>
-          </button>
-        </div>
-      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, watch, computed } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { userInfo } from '../services/userInfo';
 
 const props = defineProps({
-  selectedBoardId: Number,
-  shapeRecognitionEnabled: Boolean
+  selectedBoardId: Number
 });
 
-const emit = defineEmits(['board-selected', 'board-created', 'board-deleted', 'toggle-shape-recognition']);
+const emit = defineEmits(['board-selected', 'board-created', 'board-deleted']);
 
 const isMenuOpen = ref(false);
 const boards = ref([]);
@@ -434,50 +416,5 @@ watch(userInfo, (newUserInfo) => {
   background-color: #dadce0;
   color: #80868b;
   cursor: not-allowed;
-}
-
-.tools-section {
-  padding: 12px 16px;
-  border-top: 1px solid #e0e0e0;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-.tool-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  background-color: #f0f2f5;
-  padding: 8px;
-  border-radius: 8px;
-}
-
-.tool-button {
-  background-color: #fff;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  padding: 10px;
-  cursor: pointer;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  transition: background-color 0.2s, border-color 0.2s;
-}
-
-.tool-button:hover {
-  background-color: #e9e9e9;
-}
-
-.tool-button.active {
-  background-color: #d1e7fd;
-  border-color: #0d6efd;
-}
-
-.tool-button svg {
-  width: 24px;
-  height: 24px;
-  color: #333;
-}
-.tool-button.active svg {
-  color: #0d6efd;
 }
 </style> 
