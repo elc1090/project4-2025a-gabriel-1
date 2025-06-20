@@ -462,7 +462,7 @@ function handleMouseUp(event) {
     if (finalStroke.points.length > 10) { 
         console.log("Pontos enviados para reconhecimento:", JSON.stringify(finalStroke.points));
         const result = recognizer.recognize(finalStroke.points, true);
-        console.log('Shape Recognition Result:', result);
+        console.log('Shape Recognition Result:', JSON.stringify(result, null, 2));
         if (result && result.score > 0.70) {
             // Remove o traço desenhado
             const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
@@ -699,7 +699,7 @@ function handleTouchEnd(event) {
     if (finalStroke.points.length > 10) {
         console.log("Pontos (touch) enviados para reconhecimento:", JSON.stringify(finalStroke.points));
         const result = recognizer.recognize(finalStroke.points, true);
-        console.log('Shape Recognition Result (Touch):', result);
+        console.log('Shape Recognition Result (Touch):', JSON.stringify(result, null, 2));
         if (result && result.score > 0.70) {
             const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
             if (index !== -1) {
@@ -856,6 +856,7 @@ const createPolygon = (sides, cx, cy, radius) => {
             y: cy + radius * Math.sin(angleStep * i - Math.PI / 2),
         });
     }
+    points.push(points[0]); // Fecha o polígono
     return points;
 };
 
@@ -870,6 +871,7 @@ const createStar = (cx, cy, outerRadius, innerRadius) => {
             y: cy + radius * Math.sin(angleStep * i - Math.PI / 2),
         });
     }
+    points.push(points[0]); // Fecha a estrela
     return points;
 }
 </script>
