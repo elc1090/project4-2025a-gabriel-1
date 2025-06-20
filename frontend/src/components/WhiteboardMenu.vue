@@ -417,4 +417,46 @@ watch(userInfo, (newUserInfo) => {
   color: #80868b;
   cursor: not-allowed;
 }
+
+@media (max-width: 768px) {
+  .menu-content {
+    padding: 8px 0;
+    max-height: 80vh;
+  }
+
+  .menu-header {
+    padding: 8px 12px;
+  }
+
+  .user-avatar {
+    width: 32px;
+    height: 32px;
+  }
+
+  .user-name, .user-id-value {
+    font-size: 0.9em;
+  }
+  
+  ul li span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px; /* Ajuste conforme necessário */
+  }
+
+  li {
+    padding: 9px 12px;
+  }
+
+  .boards-title {
+    font-size: 1.1em;
+    padding: 4px 12px;
+  }
+
+  .menu-footer {
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+}
 </style> 
