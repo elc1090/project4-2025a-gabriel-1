@@ -1,10 +1,20 @@
 <template>
-  <WhiteboardMenu
-    :selected-board-id="currentBoardId"
-    @board-selected="handleBoardSelected"
-    @board-created="handleBoardSelected"
-    @board-deleted="handleBoardDeleted"
-  />
+  <div class="canvas-ui-container">
+    <WhiteboardMenu
+      :selected-board-id="currentBoardId"
+      @board-selected="handleBoardSelected"
+      @board-created="handleBoardSelected"
+      @board-deleted="handleBoardDeleted"
+    />
+    <div class="undo-redo-container">
+      <button @click="undo" :disabled="!canUndo" title="Desfazer (Ctrl+Z)">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+      </button>
+      <button @click="redo" :disabled="!canRedo" title="Refazer (Ctrl+Y)">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+      </button>
+    </div>
+  </div>
   <canvas
     ref="viewportCanvasRef"
     @mousedown="handleMouseDown"
@@ -27,7 +37,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue';
 import ContextMenu from './ContextMenu.vue';
 import WhiteboardMenu from './WhiteboardMenu.vue';
 import { userInfo } from '../services/userInfo';
@@ -60,6 +70,7 @@ const viewportState = reactive({
 });
 
 const strokes = ref([]);
+const redoStack = ref([]);
 let currentStroke = null;
 let isDrawing = false;
 let potentialDrawingStart = false;
@@ -90,6 +101,42 @@ let initialGestureInfo = {
   scale: 1,
 };
 
+const canUndo = computed(() => {
+  return strokes.value.some(s => s.user_id === userInfo.value?.id);
+});
+
+const canRedo = computed(() => {
+  return redoStack.value.length > 0;
+});
+
+const undo = () => {
+  if (!canUndo.value) return;
+  socket.value.emit('undo_request', { 
+    user_email: userInfo.value.email,
+    board_id: currentBoardId.value
+  });
+};
+
+const redo = () => {
+  if (!canRedo.value) return;
+  socket.value.emit('redo_request', { 
+    user_email: userInfo.value.email,
+    board_id: currentBoardId.value
+  });
+};
+
+const handleKeyDown = (event) => {
+  if (event.ctrlKey || event.metaKey) {
+    if (event.key === 'z') {
+      event.preventDefault();
+      undo();
+    } else if (event.key === 'y') {
+      event.preventDefault();
+      redo();
+    }
+  }
+};
+
 function switchBoard(board) {
   if (!socket.value || !socket.value.connected) return;
 
@@ -100,6 +147,7 @@ function switchBoard(board) {
   console.log(`FRONTEND: Trocando para a lousa ${boardId}`);
   
   strokes.value = [];
+  redoStack.value = [];
   redraw();
 
   currentBoardId.value = boardId;
@@ -124,6 +172,7 @@ function handleBoardDeleted(deletedBoardId) {
 onMounted(() => {
   setupViewportAndWorld();
   window.addEventListener('resize', setupViewportAndWorld);
+  window.addEventListener('keydown', handleKeyDown);
 
   const backendUrl = import.meta.env.VITE_API_URL || 'https://project3-2025a-gabriel.onrender.com';
   socket.value = io(backendUrl, {
@@ -148,6 +197,8 @@ onMounted(() => {
   socket.value.on('initial_drawing', (data) => {
     console.log(`FRONTEND: Recebendo desenho inicial para lousa.`, data.strokes.length, 'traços');
     strokes.value = data.strokes.map(strokeData => ({
+      id: strokeData.id,
+      user_id: strokeData.user_id,
       points: strokeData.points,
       color: strokeData.color,
       lineWidth: strokeData.lineWidth
@@ -158,13 +209,33 @@ onMounted(() => {
   socket.value.on('stroke_received', (strokeData) => {
     if (strokeData.board_id !== currentBoardId.value) return;
 
+    if(strokeData.user_id === userInfo.value?.id) {
+      const redoIndex = redoStack.value.findIndex(s => 
+        s.color === strokeData.color && 
+        s.lineWidth === strokeData.lineWidth && 
+        JSON.stringify(s.points) === JSON.stringify(strokeData.points)
+      );
+      if (redoIndex !== -1) {
+        redoStack.value.splice(redoIndex, 1);
+      }
+    }
+
     console.log('FRONTEND: Novo traço recebido:', strokeData);
-    strokes.value.push({
-      points: strokeData.points,
-      color: strokeData.color,
-      lineWidth: strokeData.lineWidth
-    });
+    strokes.value.push(strokeData);
     redraw();
+  });
+
+  socket.value.on('stroke_removed', (data) => {
+    if (data.board_id !== currentBoardId.value) return;
+    
+    const index = strokes.value.findIndex(s => s.id === data.stroke_id);
+    if (index !== -1) {
+      const removedStroke = strokes.value.splice(index, 1)[0];
+      if (removedStroke.user_id === userInfo.value?.id) {
+        redoStack.value.push(removedStroke);
+      }
+      redraw();
+    }
   });
 
   socket.value.on('canvas_cleared', (data) => {
@@ -172,12 +243,14 @@ onMounted(() => {
 
     console.log(`FRONTEND: Evento de limpar canvas recebido do servidor para a lousa ${data.board_id}.`);
     strokes.value = [];
+    redoStack.value = [];
     redraw();
   });
 });
 
 onUnmounted(() => {
   window.removeEventListener('resize', setupViewportAndWorld);
+  window.removeEventListener('keydown', handleKeyDown);
   if (socket.value) {
     socket.value.disconnect();
   }
@@ -289,8 +362,10 @@ function handleMouseMove(event) {
 function handleMouseUpOrOut(event) {
   if (event.button === 0 && currentStroke) {
     if (currentStroke.points.length > 1 && socket.value) {
+      redoStack.value = [];
       socket.value.emit('draw_stroke_event', {
         board_id: currentBoardId.value,
+        user_email: userInfo.value?.email,
         points: currentStroke.points,
         color: currentStroke.color,
         lineWidth: currentStroke.lineWidth
@@ -575,6 +650,7 @@ function handleMenuSelection(action, value) {
           socket.value.emit('clear_canvas_event', { board_id: currentBoardId.value });
         }
         strokes.value = [];
+        redoStack.value = [];
         redraw();
       }
       break;
@@ -596,6 +672,59 @@ function getDistance(p1, p2) {
 </script>
 
 <style scoped>
+.canvas-ui-container {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  z-index: 100;
+}
+
+.undo-redo-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 1px; /* Alinhamento visual com o botão de menu */
+}
+
+.undo-redo-container button {
+  background-color: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  color: #3c4043;
+  transition: background-color 0.2s, box-shadow 0.2s;
+}
+
+.undo-redo-container button:hover:not(:disabled) {
+  background-color: #f8f9fa;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+}
+
+.undo-redo-container button:disabled {
+  color: #9e9e9e;
+  cursor: not-allowed;
+  background-color: #f5f5f5;
+}
+
+/* Substituir os SVGs que usei de placeholder pelos corretos */
+.undo-redo-container button:first-child svg { /* Undo */
+  transform: scaleX(-1) rotate(90deg);
+}
+.undo-redo-container button:last-child svg { /* Redo */
+   transform: rotate(90deg);
+}
+
+
+/* Adicione estilos se necessário, por exemplo, para o container */
 .viewport-canvas {
   border: 1px solid #505050;
   cursor: crosshair;

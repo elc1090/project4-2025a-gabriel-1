@@ -36,29 +36,29 @@ const googleClientId = ref(import.meta.env.VITE_GOOGLE_CLIENT_ID);
 const apiUrl = import.meta.env.VITE_API_URL || 'https://project3-2025a-gabriel.onrender.com';
 
 const handleGoogleSignIn = async (response) => {
-  console.log("Recebida credencial do Google:", response.credential);
+      console.log("Recebida credencial do Google:", response.credential);
   errorMessage.value = '';
-  try {
+      try {
     const res = await fetch(`${apiUrl}/api/auth/google`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ credential: response.credential }),
-    });
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ credential: response.credential }),
+        });
 
-    const data = await res.json();
+        const data = await res.json();
 
-    if (!res.ok) {
-      throw new Error(data.message || 'Falha no login');
-    }
+        if (!res.ok) {
+          throw new Error(data.message || 'Falha no login');
+        }
 
-    console.log('Login no backend bem-sucedido:', data.user);
+        console.log('Login no backend bem-sucedido:', data.user);
     emit('login-success', data.user);
-  } catch (error) {
-    console.error('Erro ao fazer login:', error);
+      } catch (error) {
+        console.error('Erro ao fazer login:', error);
     errorMessage.value = `Erro: ${error.message}. Verifique o console para mais detalhes.`;
-  }
+      }
 };
 
 const handleGuestLogin = async () => {

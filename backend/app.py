@@ -82,6 +82,7 @@ class Stroke(db.Model):
     __tablename__ = 'stroke' # Nome explícito da tabela
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(255), db.ForeignKey('users.id'), nullable=False)
     whiteboard_id = db.Column(db.Integer, db.ForeignKey('whiteboards.id'), nullable=False)
     
     color = db.Column(db.String(7), nullable=False) # Ex: #RRGGBB
@@ -131,6 +132,8 @@ def status_api():
 DEFAULT_BOARD_ID = 1
 # Dicionário para rastrear SIDs de convidados e seus user_ids
 guest_sids = {}
+# Dicionário para o histórico de "refazer"
+redo_stacks = {} # Formato: { "user_id": [stroke_data, ...], ... }
 
 @socketio.on('connect')
 def handle_connect():
@@ -175,6 +178,7 @@ def handle_join_board(data):
             for stroke_model in board.strokes:
                 existing_strokes_data.append({
                     'id': stroke_model.id,
+                    'user_id': stroke_model.user_id,
                     'color': stroke_model.color,
                     'lineWidth': stroke_model.line_width,
                     'points': json.loads(stroke_model.points_json)
@@ -228,33 +232,125 @@ def handle_disconnect():
 def handle_draw_stroke_event(data):
     """Recebe um traço completo do cliente e o retransmite para outros na mesma sala."""
     board_id = data.get('board_id')
-    if not board_id:
-        print("Evento de desenho recebido sem 'board_id'. Ignorando.")
+    user_email = data.get('user_email')
+    
+    if not all([board_id, user_email, 'points' in data, 'color' in data, 'lineWidth' in data]):
+        print("Evento de desenho recebido com dados incompletos. Ignorando.")
         return
 
-    print(f"Evento de desenho recebido para lousa {board_id}: {data.get('color')}, {len(data.get('points', []))} pontos")
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        print(f"Usuário {user_email} não encontrado ao tentar desenhar.")
+        return
+
+    # Limpa o histórico de "refazer" deste usuário, pois um novo traço foi criado
+    if user.id in redo_stacks:
+        redo_stacks[user.id] = []
+
+    print(f"Evento de desenho recebido do usuário {user.name} para a lousa {board_id}")
     
-    room = f"board_{board_id}"
-    emit('stroke_received', data, room=room, include_self=False)
-
     try:
-        board = db.session.get(Whiteboard, board_id)
-        if not board:
-            print(f"Lousa {board_id} não encontrada, não foi possível salvar o traço.")
-            return
-
         new_stroke = Stroke(
-            whiteboard_id=board.id,
+            whiteboard_id=board_id,
+            user_id=user.id,
             color=data['color'],
             line_width=data['lineWidth'],
             points_json=json.dumps(data['points'])
         )
         db.session.add(new_stroke)
         db.session.commit()
-        print(f"Traço salvo no BD com ID {new_stroke.id} para a lousa {board.id}")
+
+        stroke_data_for_broadcast = {
+            'id': new_stroke.id,
+            'user_id': user.id,
+            'board_id': board_id,
+            'color': new_stroke.color,
+            'lineWidth': new_stroke.line_width,
+            'points': data['points']
+        }
+        room = f"board_{board_id}"
+        emit('stroke_received', stroke_data_for_broadcast, room=room) # Envia para todos na sala
+        
+        print(f"Traço salvo no BD com ID {new_stroke.id} para a lousa {board_id}")
     except Exception as e:
         db.session.rollback()
         print(f"Erro ao salvar traço no banco de dados: {e}")
+
+
+@socketio.on('undo_request')
+def handle_undo(data):
+    """Desfaz o último traço de um usuário em uma lousa."""
+    user_email = data.get('user_email')
+    board_id = data.get('board_id')
+    user = User.query.filter_by(email=user_email).first()
+
+    if not user:
+        return
+        
+    last_stroke = Stroke.query.filter_by(user_id=user.id, whiteboard_id=board_id).order_by(Stroke.created_at.desc()).first()
+
+    if last_stroke:
+        stroke_data_for_redo = {
+            'user_id': last_stroke.user_id,
+            'whiteboard_id': last_stroke.whiteboard_id,
+            'color': last_stroke.color,
+            'line_width': last_stroke.line_width,
+            'points_json': last_stroke.points_json,
+            'created_at': last_stroke.created_at
+        }
+        
+        if user.id not in redo_stacks:
+            redo_stacks[user.id] = []
+        redo_stacks[user.id].append(stroke_data_for_redo)
+
+        stroke_id_to_remove = last_stroke.id
+        db.session.delete(last_stroke)
+        db.session.commit()
+        
+        room = f"board_{board_id}"
+        emit('stroke_removed', {'stroke_id': stroke_id_to_remove, 'board_id': board_id}, room=room)
+        print(f"Usuário {user.name} desfez o traço {stroke_id_to_remove}")
+
+@socketio.on('redo_request')
+def handle_redo(data):
+    """Refaz o último traço desfeito por um usuário."""
+    user_email = data.get('user_email')
+    board_id = data.get('board_id')
+    user = User.query.filter_by(email=user_email).first()
+
+    if not user or user.id not in redo_stacks or not redo_stacks[user.id]:
+        return
+        
+    stroke_to_redo_data = redo_stacks[user.id].pop()
+    
+    try:
+        restored_stroke = Stroke(
+            user_id=stroke_to_redo_data['user_id'],
+            whiteboard_id=stroke_to_redo_data['whiteboard_id'],
+            color=stroke_to_redo_data['color'],
+            line_width=stroke_to_redo_data['line_width'],
+            points_json=stroke_to_redo_data['points_json'],
+            created_at=stroke_to_redo_data['created_at']
+        )
+        db.session.add(restored_stroke)
+        db.session.commit()
+
+        stroke_data_for_broadcast = {
+            'id': restored_stroke.id,
+            'user_id': restored_stroke.user_id,
+            'board_id': restored_stroke.whiteboard_id,
+            'color': restored_stroke.color,
+            'lineWidth': restored_stroke.line_width,
+            'points': json.loads(restored_stroke.points_json)
+        }
+        room = f"board_{board_id}"
+        emit('stroke_received', stroke_data_for_broadcast, room=room)
+        print(f"Usuário {user.name} refez um traço, novo ID: {restored_stroke.id}")
+    except Exception as e:
+        db.session.rollback()
+        # Se falhar, devolve o traço para a pilha
+        redo_stacks[user.id].append(stroke_to_redo_data)
+        print(f"Erro ao refazer traço: {e}")
 
 
 @socketio.on('clear_canvas_event')
@@ -459,7 +555,7 @@ def google_auth():
             user.accessible_whiteboards.append(default_board)
         
         # 4. Commit de todas as alterações
-        db.session.commit()
+            db.session.commit()
 
         if is_new_user:
             print(f"Novo usuário criado: {user_name} ({user_email})")
