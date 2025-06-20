@@ -113,29 +113,9 @@ const canRedo = computed(() => {
 
 const undo = () => {
   if (!canUndo.value) return;
-
-  // Abordagem de UI Otimista
-  // 1. Encontra o último traço feito pelo usuário atual no array local.
-  let lastUserStroke = null;
-  let lastUserStrokeIndex = -1;
-  // Itera de trás para frente para encontrar o mais recente.
-  for (let i = strokes.value.length - 1; i >= 0; i--) {
-    if (strokes.value[i].user_id === userInfo.value?.id) {
-      lastUserStroke = strokes.value[i];
-      lastUserStrokeIndex = i;
-      break;
-    }
-  }
-
-  if (lastUserStroke) {
-    // 2. Remove o traço do array principal e o coloca na pilha de refazer.
-    const [removedStroke] = strokes.value.splice(lastUserStrokeIndex, 1);
-    redoStack.value.push(removedStroke);
-    redraw(); // 3. Redesenha o canvas imediatamente.
-  }
-
-  // 4. Emite o evento para o servidor atualizar os outros clientes.
-  socket.value.emit('undo_request', {
+  // Apenas emite o evento. O servidor é a fonte da verdade e enviará
+  // um evento 'stroke_removed' de volta para todos, incluindo este cliente.
+  socket.value.emit('undo_request', { 
     user_email: userInfo.value.email,
     board_id: currentBoardId.value
   });
@@ -143,20 +123,8 @@ const undo = () => {
 
 const redo = () => {
   if (!canRedo.value) return;
-
-  // UI Otimista para refazer
-  // 1. Pega o último traço da pilha de refazer.
-  const strokeToRedo = redoStack.value.pop();
-
-  if (strokeToRedo) {
-    // 2. Adiciona de volta ao array de traços.
-    // Não o adicionamos ainda, pois precisamos do ID correto do servidor.
-    // Em vez disso, informamos ao servidor para refazê-lo.
-    // Quando o 'stroke_received' voltar, ele será adicionado para todos.
-  }
-  
-  // Apenas peça ao servidor para refazer. A resposta 'stroke_received' cuidará da atualização.
-  socket.value.emit('redo_request', {
+  // O mesmo para refazer. O servidor enviará 'stroke_received' para adicionar o traço de volta.
+  socket.value.emit('redo_request', { 
     user_email: userInfo.value.email,
     board_id: currentBoardId.value
   });
@@ -247,20 +215,11 @@ onMounted(() => {
     // Garante que o traço é para a lousa atual
     if (strokeData.board_id !== currentBoardId.value) return;
 
-    // Se o traço recebido foi um que eu acabei de refazer, remova-o da minha pilha de refazer local.
-    // Isso evita que eu possa refazer o mesmo traço várias vezes.
+    // Se um traço meu for adicionado (provavelmente um 'redo'),
+    // removemos um item da pilha de refazer local para desabilitar o botão 'Refazer'.
     if (strokeData.user_id === userInfo.value?.id) {
-      // Se este traço foi um que acabamos de refazer, o servidor está nos dando a versão final com o novo ID.
-      // Removemos o primeiro item da pilha de refazer.
-      const redoIndex = redoStack.value.findIndex(s => 
-        s.color === strokeData.color && 
-        s.lineWidth === strokeData.lineWidth &&
-        s.user_id === strokeData.user_id 
-        // Não podemos comparar IDs ou pontos de forma confiável aqui.
-        // A suposição é que o primeiro item na pilha de refazer corresponde.
-      );
-      if (redoIndex !== -1) {
-        redoStack.value.splice(redoIndex, 1);
+      if (redoStack.value.length > 0) {
+        redoStack.value.pop();
       }
     }
 
@@ -270,20 +229,20 @@ onMounted(() => {
   });
 
   socket.value.on('stroke_removed', (data) => {
-    // Se a remoção foi iniciada por nós, a UI já foi atualizada otimisticamente.
-    // Portanto, não fazemos nada para evitar processamento duplo.
-    const isMyOwnAction = redoStack.value.some(s => s.id === data.stroke_id);
-    if(isMyOwnAction) {
-      return; 
-    }
-    
-    // Se a remoção foi de outro usuário, processamos normalmente.
     if (data.board_id !== currentBoardId.value) return;
     
     const index = strokes.value.findIndex(s => s.id === data.stroke_id);
     if (index !== -1) {
-      strokes.value.splice(index, 1);
-      // Não adicionamos à pilha de refazer de outro usuário.
+      // Remove o traço da lista principal
+      const [removedStroke] = strokes.value.splice(index, 1);
+
+      // Se o traço removido for do usuário atual, adicione-o à pilha de refazer local
+      // apenas para controlar o estado do botão 'Refazer'.
+      if (removedStroke.user_id === userInfo.value?.id) {
+        redoStack.value.push(removedStroke);
+      }
+      
+      // Redesenha o canvas com o traço removido.
       redraw();
     }
   });
