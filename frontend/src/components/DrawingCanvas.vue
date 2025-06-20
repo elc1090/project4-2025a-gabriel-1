@@ -1,21 +1,20 @@
 <template>
-  <div class="canvas-ui-container">
-    <div class="left-controls">
-      <WhiteboardMenu
-        :selected-board-id="currentBoardId"
-        @board-selected="handleBoardSelected"
-        @board-created="handleBoardSelected"
-        @board-deleted="handleBoardDeleted"
-      />
-      <div class="undo-redo-container">
-        <button @click="undo" :disabled="!canUndo" title="Desfazer (Ctrl+Z)">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-corner-up-left"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg>
-        </button>
-        <button @click="redo" :disabled="!canRedo" title="Refazer (Ctrl+Y)">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-corner-up-right"><polyline points="15 14 20 9 15 4"></polyline><path d="M4 20v-7a4 4 0 0 1 4-4h12"></path></svg>
-        </button>
-      </div>
-    </div>
+  <div class="sidebar-container">
+    <WhiteboardMenu
+      :selected-board-id="currentBoardId"
+      @board-selected="handleBoardSelected"
+      @board-created="handleBoardSelected"
+      @board-deleted="handleBoardDeleted"
+    />
+
+    <hr class="separator" />
+
+    <button @click="undo" :disabled="!canUndo" title="Desfazer (Ctrl+Z)" class="sidebar-button">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-corner-up-left"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg>
+    </button>
+    <button @click="redo" :disabled="!canRedo" title="Refazer (Ctrl+Y)" class="sidebar-button">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-corner-up-right"><polyline points="15 14 20 9 15 4"></polyline><path d="M4 20v-7a4 4 0 0 1 4-4h12"></path></svg>
+    </button>
   </div>
   <canvas
     ref="viewportCanvasRef"
@@ -649,52 +648,56 @@ function getDistance(p1, p2) {
 </script>
 
 <style scoped>
-.canvas-ui-container {
+.sidebar-container {
   position: absolute;
-  top: 10px;
-  left: 10px;
+  top: 50%;
+  left: 16px;
+  transform: translateY(-50%);
   z-index: 100;
-}
-
-.left-controls {
+  
+  background-color: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  padding: 12px;
+  
   display: flex;
-  align-items: flex-start; /* Alinha os itens no topo */
-  gap: 10px;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
 }
 
-.undo-redo-container {
-  display: flex;
-  flex-direction: column; /* Organiza os botões verticalmente */
-  gap: 8px;
-  /* O alinhamento com o WhiteboardMenu já é feito pelo flex-start do container pai */
+.separator {
+  width: 100%;
+  border: none;
+  border-top: 1px solid #e8eaed;
+  margin: 0;
 }
 
-.undo-redo-container button {
-  background-color: #ffffff;
-  border: 1px solid #dadce0;
-  border-radius: 8px; /* Cantos levemente arredondados */
-  width: 40px; /* Tamanho ajustado */
-  height: 40px;
+/* Estilo para os botões da sidebar, incluindo o do componente WhiteboardMenu */
+:deep(.whiteboard-menu-button),
+.sidebar-button {
+  background-color: transparent;
+  border: none;
+  border-radius: 12px;
+  width: 48px;
+  height: 48px;
   cursor: pointer;
   display: flex;
   justify-content: center;
   align-items: center;
-  box-shadow: 0 1px 3px rgba(60,64,67,0.15);
-  color: #3c4043;
-  transition: background-color 0.2s, box-shadow 0.2s, border-color 0.2s;
+  color: #5f6368;
+  transition: background-color 0.2s;
+  padding: 0;
 }
 
-.undo-redo-container button:hover:not(:disabled) {
-  background-color: #f8f9fa;
-  border-color: #d2d5d8;
-  box-shadow: 0 1px 4px rgba(60,64,67,0.2);
+:deep(.whiteboard-menu-button:hover:not(:disabled)),
+.sidebar-button:hover:not(:disabled) {
+  background-color: #f1f3f4;
 }
 
-.undo-redo-container button:disabled {
-  color: #9e9e9e;
+.sidebar-button:disabled {
+  color: #bdc1c6;
   cursor: not-allowed;
-  background-color: #f5f5f5;
-  box-shadow: none;
 }
 
 .viewport-canvas {
