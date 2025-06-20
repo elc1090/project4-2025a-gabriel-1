@@ -41,7 +41,7 @@
     class="viewport-canvas"
   ></canvas>
   <ContextMenu
-    v-if="menu.visible"
+    :visible="menu.visible"
     :x="menu.x"
     :y="menu.y"
     @select="handleMenuSelection"
@@ -540,21 +540,8 @@ function showContextMenuAt(screenX, screenY) {
   }
   isDrawing = false;
 
-  // Lógica para ajustar a posição do menu e mantê-lo na tela.
-  const menuWidth = 250; // Largura estimada do menu
-  const menuHeight = 300; // Altura estimada do menu
-  let finalX = screenX;
-  let finalY = screenY;
-
-  if (finalX + menuWidth > window.innerWidth) {
-    finalX = window.innerWidth - menuWidth - 10; // 10px de margem
-  }
-  if (finalY + menuHeight > window.innerHeight) {
-    finalY = window.innerHeight - menuHeight - 10;
-  }
-
-  menu.x = finalX;
-  menu.y = finalY;
+  menu.x = screenX;
+  menu.y = screenY;
   menu.visible = true;
 }
 
@@ -1198,10 +1185,11 @@ function analyzeShape(points) {
   :deep(.menu-content) {
     /* Reposiciona o menu para abrir para baixo, centralizado */
     top: calc(100% + 12px);
-    left: 50%;
-    transform: translateX(-50%);
-    width: auto;
-    max-width: calc(100vw - 32px); /* Garante que não saia da tela */
+    left: 16px;
+    right: 16px;
+    width: auto; /* Sobrescreve a largura fixa */
+    max-width: none; /* Remove o max-width anterior */
+    transform: none; /* Remove a transformação */
   }
 }
 </style>
