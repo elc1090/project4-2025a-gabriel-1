@@ -1185,11 +1185,10 @@ function analyzeShape(points) {
   :deep(.menu-content) {
     /* Reposiciona o menu para abrir para baixo, centralizado */
     top: calc(100% + 12px);
-    left: 16px;
-    right: 16px;
-    width: auto; /* Sobrescreve a largura fixa */
-    max-width: none; /* Remove o max-width anterior */
-    transform: none; /* Remove a transformação */
+    left: 50%;
+    transform: translateX(-50%);
+    width: 320px; /* Mantém a largura original como base */
+    max-width: calc(100vw - 32px); /* Garante que não saia da tela */
   }
 }
 </style>
