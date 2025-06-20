@@ -101,7 +101,8 @@ export default function DollarRecognizer() {
 				u = i;
 			}
 		}
-		return (u == -1) ? new Result("No match.", 0.0) : new Result(this.Unistrokes[u].Name, useProtractor ? 1.0 / b : 1.0 - b / HalfDiagonal);
+		const normalizedScore = 1.0 - (b / (Math.PI / 2.0));
+		return (u == -1) ? new Result("No match.", 0.0) : new Result(this.Unistrokes[u].Name, normalizedScore);
 	}
 }
 
