@@ -895,25 +895,47 @@ const createPerfectShape = (shapeName, originalStroke, simplifiedPoints) => {
             const { cx, cy, width, height } = getBoundingBox(originalStroke.points);
             perfectPoints = createPolygon(32, cx, cy, Math.min(width, height) / 2);
             break;
-        case 'square':
-            // NOVO: Cria um quadrado perfeito alinhado aos eixos
-            const box = getBoundingBox(originalStroke.points);
-            const side = (box.width + box.height) / 2; // Média para um lado perfeito
-            perfectPoints = [
-                { x: box.cx - side / 2, y: box.cy - side / 2 },
-                { x: box.cx + side / 2, y: box.cy - side / 2 },
-                { x: box.cx + side / 2, y: box.cy + side / 2 },
-                { x: box.cx - side / 2, y: box.cy + side / 2 },
-                { x: box.cx - side / 2, y: box.cy - side / 2 } // Fecha a forma
-            ];
-            break;
         case 'rectangle':
-            // NOVO: Usa os 4 vértices simplificados para preservar a rotação/forma.
-            const rectVertices = simplifiedPoints.slice(0, 4);
-            perfectPoints = [...rectVertices, rectVertices[0]]; // Fecha a forma
+            // NOVO: Regulariza os vértices para criar um retângulo perfeito, mas rotacionado.
+            const vertices = simplifiedPoints.slice(0, 4); // Pega os 4 vértices principais
+
+            if (vertices.length === 4) {
+                // 1. Achar o centro geométrico
+                const centerX = (vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4;
+                const centerY = (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4;
+                const center = { x: centerX, y: centerY };
+
+                // 2. Achar a distância média do centro aos vértices (cria um retângulo com diagonais iguais)
+                let totalDist = 0;
+                for(let i=0; i < 4; i++){
+                    totalDist += getDistance(center, vertices[i]);
+                }
+                const avgDist = totalDist / 4;
+
+                // 3. Recriar os vértices na distância média, preservando a direção original
+                let newVertices = [];
+                for(let i=0; i < 4; i++){
+                    const originalVector = { x: vertices[i].x - center.x, y: vertices[i].y - center.y };
+                    const magnitude = getDistance(center, vertices[i]);
+                    if (magnitude > 0) { // Evita divisão por zero
+                        const normalizedVector = { x: originalVector.x / magnitude, y: originalVector.y / magnitude };
+                        newVertices.push({
+                            x: center.x + normalizedVector.x * avgDist,
+                            y: center.y + normalizedVector.y * avgDist
+                        });
+                    } else {
+                        newVertices.push({ ...vertices[i] }); // Mantém o ponto original
+                    }
+                }
+                perfectPoints = [...newVertices, newVertices[0]]; // Fecha a forma
+            } else {
+                // Fallback para o método antigo se não tivermos exatamente 4 pontos
+                const rectVertices = simplifiedPoints.slice(0, 4);
+                perfectPoints = [...rectVertices, rectVertices[0]];
+            }
             break;
         case 'triangle':
-            // NOVO: Usa os 3 vértices simplificados para preservar a rotação/forma.
+            // Usa os 3 vértices simplificados para preservar a rotação/forma.
             const triVertices = simplifiedPoints.slice(0, 3);
             perfectPoints = [...triVertices, triVertices[0]]; // Fecha a forma
             break;
@@ -1014,38 +1036,35 @@ function analyzeShape(points) {
     const isClosed = getDistance(start, end) < diagonal * 0.25; // Limiar de fechamento dinâmico
 
     // Análise para polígonos fechados
-    if (isClosed && numPoints >= 3 && numPoints <= 6) {
-        let angles = [];
-        // Para uma forma fechada com N pontos, temos N ângulos internos.
-        for (let i = 0; i < numPoints - 1; i++) {
-             const p1 = points[(i + numPoints - 2) % (numPoints-1)];
-             const p2 = points[i];
-             const p3 = points[(i + 1) % (numPoints - 1)];
-             angles.push(getAngle(p1, p2, p3));
-        }
+    if (isClosed && numPoints >= 4) {
+        // Usa `numPoints-1` como o número de vértices únicos, assumindo que o último ponto fecha no primeiro.
+        const vertices = points.slice(0, numPoints - 1);
+        const numVertices = vertices.length;
+
+        if (numVertices < 3) return { name: 'unknown', confidence: 0 };
         
-        // Retângulo/Quadrado: 4 a 6 pontos, análise mais rigorosa
-        if (numPoints >= 4 && numPoints <= 6) {
-            // Ângulos mais rigorosos para evitar trapézios
-            const nearRightAngles = angles.filter(angle => angle > 80 && angle < 100).length;
-            const { width, height } = getBoundingBox(points);
-            const aspectRatio = Math.min(width, height) / Math.max(width, height);
+        let angles = [];
+        for (let i = 0; i < numVertices; i++) {
+            const p1 = vertices[(i + numVertices - 1) % numVertices];
+            const p2 = vertices[i];
+            const p3 = vertices[(i + 1) % numVertices];
+            angles.push(getAngle(p1, p2, p3));
+        }
 
-            // Prioridade 1: Quadrado. Requer 4 ângulos retos e proporção "quadrada".
-            if (nearRightAngles >= 4 && aspectRatio > 0.88) {
-                return { name: 'square', confidence: 0.95 };
-            }
-            
-            // Prioridade 2: Retângulo. Requer pelo menos 3 ângulos retos.
-            if (nearRightAngles >= 3) {
-                return { name: 'rectangle', confidence: 0.90 };
+        // Retângulo: Deve ter 4 vértices.
+        if (numVertices === 4) {
+            // Lógica mais estrita: exige 4 ângulos próximos de 90 graus para evitar trapézios.
+            const nearRightAngles = angles.filter(angle => angle > 80 && angle < 100).length;
+            if (nearRightAngles === 4) {
+                return { name: 'rectangle', confidence: 0.95 };
             }
         }
 
-        // Triângulo: 3 ou 4 pontos (devido ao fechamento)
-        if (numPoints >= 3 && numPoints <= 4) {
+        // Triângulo: Deve ter 3 vértices.
+        if (numVertices === 3) {
              const sharpAngles = angles.filter(angle => angle > 30 && angle < 140).length;
-             if (sharpAngles >= 2) {
+             // Exige 3 ângulos razoáveis.
+             if (sharpAngles === 3) {
                  return { name: 'triangle', confidence: 0.9 };
              }
         }
