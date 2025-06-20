@@ -1,9 +1,9 @@
 <template>
-  <div class="whiteboard-menu-container">
-    <button @click="toggleMenu" class="menu-toggle-btn">
-      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-    </button>
-    <div v-if="isMenuOpen" class="menu-content" @click.stop>
+  <button @click="toggleMenu" class="whiteboard-menu-button">
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+  </button>
+  <div v-if="isMenuOpen" class="menu-overlay" @click="closeMenu">
+    <div class="menu-content" @click.stop>
       <div class="menu-header">
         <div class="user-info">
           <img :src="userInfo?.profile_pic" alt="Avatar" class="user-avatar">
@@ -204,48 +204,37 @@ watch(userInfo, (newUserInfo) => {
 </script>
 
 <style scoped>
-.whiteboard-menu-container {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 100;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+/* A classe do botão é herdada do componente pai (DrawingCanvas) via :deep()
+   Não precisa de estilo aqui, a menos que seja algo específico. */
+.whiteboard-menu-button {
+  /* Estilos específicos podem ir aqui se necessário, mas a maior parte
+     vem da sidebar em DrawingCanvas.vue */
 }
 
-.menu-toggle-btn {
-  background-color: #ffffff;
-  border: 1px solid #e0e0e0;
-  border-radius: 50%;
-  width: 44px;
-  height: 44px;
-  cursor: pointer;
+.menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0,0,0,0.3);
+  z-index: 110; /* Acima da sidebar */
   display: flex;
   justify-content: center;
   align-items: center;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  color: #3c4043;
-  transition: background-color 0.2s, box-shadow 0.2s;
-}
-.menu-toggle-btn:hover {
-  background-color: #f8f9fa;
-  box-shadow: 0 3px 10px rgba(0,0,0,0.15);
-}
-.menu-toggle-btn svg {
-  stroke: currentColor;
 }
 
 .menu-content {
-  position: absolute;
-  top: 55px;
-  left: 0;
+  position: relative; /* Mudou de absolute para relative */
   background-color: #f8f9fa;
   border-radius: 12px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-  width: 290px;
-  max-height: calc(100vh - 70px);
+  width: 320px; /* Um pouco maior para conforto */
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
   color: #202124;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 .menu-header {
