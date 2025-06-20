@@ -200,34 +200,31 @@ def handle_disconnect():
     sid = request.sid
     print(f"Cliente {sid} desconectado")
 
-    # Se o SID pertencer a um convidado, remove o usuário e seus dados do banco.
+    # Se o SID pertencer a um convidado, remove o usuário e todos os seus dados.
     if sid in guest_sids:
-        user_id_to_delete = guest_sids[sid]
-        print(f"SID {sid} pertence a um convidado. Tentando limpar o usuário com ID {user_id_to_delete}...")
+        user_id_to_delete = guest_sids.pop(sid) # Remove e obtém o ID
+        print(f"SID {sid} pertence a um convidado. Limpando todos os dados para o usuário {user_id_to_delete}...")
         
         try:
-            user = User.query.get(user_id_to_delete)
-            if user:
-                # 1. Deletar todos os traços criados pelo usuário em todas as lousas.
-                Stroke.query.filter_by(user_id=user_id_to_delete).delete()
-                
-                # 2. Remover as permissões de acesso do usuário de todas as lousas.
-                # A forma mais direta é usar a tabela de associação.
-                db.session.query(whiteboard_access).filter_by(user_id=user_id_to_delete).delete()
+            # 1. Deletar lousas que o convidado possui. 
+            # A configuração de cascade no modelo Whiteboard cuidará de deletar os traços contidos nessas lousas.
+            Whiteboard.query.filter_by(owner_id=user_id_to_delete).delete(synchronize_session=False)
 
-                # 3. Agora podemos deletar o usuário com segurança.
-                db.session.delete(user)
-                
-                db.session.commit()
-                print(f"Usuário convidado e todos os seus dados (ID: {user_id_to_delete}) foram removidos com sucesso.")
-            else:
-                print(f"Usuário convidado com ID {user_id_to_delete} não encontrado para exclusão.")
+            # 2. Deletar traços restantes do usuário em lousas compartilhadas (que ele não possui).
+            Stroke.query.filter_by(user_id=user_id_to_delete).delete(synchronize_session=False)
+            
+            # 3. Remover as permissões de acesso do usuário.
+            db.session.query(whiteboard_access).filter_by(user_id=user_id_to_delete).delete(synchronize_session=False)
+
+            # 4. Deletar o usuário.
+            User.query.filter_by(id=user_id_to_delete).delete(synchronize_session=False)
+            
+            db.session.commit()
+            print(f"Usuário convidado e todos os seus dados (ID: {user_id_to_delete}) foram removidos com sucesso.")
+        
         except Exception as e:
             db.session.rollback()
             print(f"Erro ao tentar remover o usuário convidado {user_id_to_delete}: {e}")
-        
-        # Remove o sid do dicionário de rastreamento
-        del guest_sids[sid]
 
 
 @socketio.on('draw_stroke_event')
