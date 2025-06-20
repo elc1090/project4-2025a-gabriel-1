@@ -21,8 +21,8 @@
     ref="viewportCanvasRef"
     @mousedown="handleMouseDown"
     @mousemove="handleMouseMove"
-    @mouseup="handleMouseUpOrOut"
-    @mouseout="handleMouseUpOrOut"
+    @mouseup="handleMouseUp"
+    @mouseout="handleMouseUp"
     @wheel.prevent="handleWheel"
     @touchstart.prevent="handleTouchStart"
     @touchmove.prevent="handleTouchMove"
@@ -73,9 +73,8 @@ const viewportState = reactive({
 
 const strokes = ref([]);
 const redoStack = ref([]);
-let currentStroke = null;
 let isDrawing = false;
-let potentialDrawingStart = false;
+let currentTempStrokeId = null;
 
 const drawingSettings = reactive({
   color: 'black',
@@ -113,8 +112,6 @@ const canRedo = computed(() => {
 
 const undo = () => {
   if (!canUndo.value) return;
-  // Apenas emite o evento. O servidor é a fonte da verdade e enviará
-  // um evento 'stroke_removed' de volta para todos, incluindo este cliente.
   socket.value.emit('undo_request', { 
     user_email: userInfo.value.email,
     board_id: currentBoardId.value
@@ -123,7 +120,6 @@ const undo = () => {
 
 const redo = () => {
   if (!canRedo.value) return;
-  // O mesmo para refazer. O servidor enviará 'stroke_received' para adicionar o traço de volta.
   socket.value.emit('redo_request', { 
     user_email: userInfo.value.email,
     board_id: currentBoardId.value
@@ -212,18 +208,29 @@ onMounted(() => {
   });
 
   socket.value.on('stroke_received', (strokeData) => {
-    // Garante que o traço é para a lousa atual
     if (strokeData.board_id !== currentBoardId.value) return;
 
-    // Se um traço meu for adicionado (provavelmente um 'redo'),
-    // removemos um item da pilha de refazer local para desabilitar o botão 'Refazer'.
+    if (strokeData.temp_id && strokeData.user_id === userInfo.value.id) {
+      const tempStrokeIndex = strokes.value.findIndex(s => s.id === strokeData.temp_id);
+      if (tempStrokeIndex !== -1) {
+        strokes.value[tempStrokeIndex] = {
+          id: strokeData.id,
+          user_id: strokeData.user_id,
+          points: strokeData.points,
+          color: strokeData.color,
+          lineWidth: strokeData.lineWidth,
+        };
+        redraw();
+        return;
+      }
+    }
+    
     if (strokeData.user_id === userInfo.value?.id) {
       if (redoStack.value.length > 0) {
         redoStack.value.pop();
       }
     }
-
-    console.log('FRONTEND: Novo traço recebido:', strokeData);
+    
     strokes.value.push(strokeData);
     redraw();
   });
@@ -233,16 +240,12 @@ onMounted(() => {
     
     const index = strokes.value.findIndex(s => s.id === data.stroke_id);
     if (index !== -1) {
-      // Remove o traço da lista principal
       const [removedStroke] = strokes.value.splice(index, 1);
 
-      // Se o traço removido for do usuário atual, adicione-o à pilha de refazer local
-      // apenas para controlar o estado do botão 'Refazer'.
       if (removedStroke.user_id === userInfo.value?.id) {
         redoStack.value.push(removedStroke);
       }
       
-      // Redesenha o canvas com o traço removido.
       redraw();
     }
   });
@@ -332,65 +335,56 @@ function screenToWorldCoordinates(screenX, screenY) {
 }
 
 function handleMouseDown(event) {
-  menu.visible = false;
-  isDrawing = false;
-  if (event.button === 0) {
-    const { x, y } = screenToWorldCoordinates(event.offsetX, event.offsetY);
-    currentStroke = {
-      points: [{ x, y }],
-      color: drawingSettings.color,
-      lineWidth: drawingSettings.lineWidth,
-    };
-    strokes.value.push(currentStroke);
-    isDrawing = true;
-    redraw();
-  } else if (event.button === 1) {
-    event.preventDefault();
-    viewportState.isPanning = true;
-    viewportState.lastPanX = event.clientX;
-    viewportState.lastPanY = event.clientY;
-  }
+  if (event.button !== 0) return;
+  isDrawing = true;
+  
+  redoStack.value = [];
+
+  const { x, y } = screenToWorldCoordinates(event.offsetX, event.offsetY);
+  
+  currentTempStrokeId = 'temp_' + Date.now();
+
+  const newStroke = {
+    id: currentTempStrokeId,
+    user_id: userInfo.value.id,
+    points: [{ x, y }],
+    color: drawingSettings.color,
+    lineWidth: drawingSettings.lineWidth,
+    is_temp: true,
+  };
+
+  strokes.value.push(newStroke);
+  redraw();
 }
 
 function handleMouseMove(event) {
-  if (isDrawing && currentStroke && (event.buttons & 1)) {
+  if (!isDrawing) return;
+
+  const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
+  if (activeStroke) {
     const { x, y } = screenToWorldCoordinates(event.offsetX, event.offsetY);
-    currentStroke.points.push({ x, y });
-    redraw();
-  } else if (viewportState.isPanning && (event.buttons & 4)) {
-    const dx = event.clientX - viewportState.lastPanX;
-    const dy = event.clientY - viewportState.lastPanY;
-    viewportState.offsetX += dx;
-    viewportState.offsetY += dy;
-    viewportState.lastPanX = event.clientX;
-    viewportState.lastPanY = event.clientY;
+    activeStroke.points.push({ x, y });
     redraw();
   }
 }
 
-function handleMouseUpOrOut(event) {
-  if (event.button === 0 && currentStroke) {
-    if (currentStroke.points.length > 1 && socket.value) {
-      redoStack.value = [];
-      socket.value.emit('draw_stroke_event', {
-        board_id: currentBoardId.value,
-        user_email: userInfo.value?.email,
-        points: currentStroke.points,
-        color: currentStroke.color,
-        lineWidth: currentStroke.lineWidth
-      });
-    } else if (currentStroke.points.length <= 1) {
-        const index = strokes.value.indexOf(currentStroke);
-        if (index > -1) strokes.value.splice(index,1);
-        redraw();
-    }
-    isDrawing = false;
-  }
-  currentStroke = null;
+function handleMouseUp(event) {
+  if (event.button !== 0 || !isDrawing) return;
+  isDrawing = false;
 
-  if (event.button === 1 || !(event.buttons & 4)) {
-    viewportState.isPanning = false;
+  const finalStroke = strokes.value.find(s => s.id === currentTempStrokeId);
+
+  if (finalStroke && finalStroke.points.length > 1 && socket.value) {
+    socket.value.emit('draw_stroke_event', {
+      board_id: currentBoardId.value,
+      user_email: userInfo.value?.email,
+      points: finalStroke.points,
+      color: finalStroke.color,
+      lineWidth: finalStroke.lineWidth,
+      temp_id: finalStroke.id,
+    });
   }
+  currentTempStrokeId = null;
 }
 
 function handleWheel(event) {
@@ -416,15 +410,13 @@ function handleWheel(event) {
 function showContextMenuAt(screenX, screenY) {
   if (socket.value) socket.value.emit('debug_touch_event', { type: 'showContextMenuAt_Triggered', screenX, screenY, sid: socket.value.id });
   
-  potentialDrawingStart = false;
-
-  if (currentStroke) {
-    const index = strokes.value.indexOf(currentStroke);
+  if (currentTempStrokeId) {
+    const index = strokes.value.indexOf(strokes.value.find(s => s.id === currentTempStrokeId));
     if (index > -1) {
       strokes.value.splice(index, 1);
       if (socket.value) socket.value.emit('debug_touch_event', { type: 'showContextMenuAt_ClearedSpeculativeStroke', sid: socket.value.id });
     }
-    currentStroke = null;
+    currentTempStrokeId = null;
   }
   isDrawing = false;
 
@@ -435,212 +427,58 @@ function showContextMenuAt(screenX, screenY) {
 
 function handleTouchStart(event) {
   event.preventDefault();
-  const touches = event.touches;
-  const rect = viewportCanvasRef.value.getBoundingClientRect();
+  isDrawing = true;
   
-  if (socket.value) {
-    const touchDataForDebug = Array.from(touches).map(t => ({ id: t.identifier, clientX: t.clientX, clientY: t.clientY }));
-    socket.value.emit('debug_touch_event', {
-      type: 'touchstart_ENTRY',
-      touchesLength: touches.length,
-      userAgent: navigator.userAgent,
-      touchData: touchDataForDebug,
-      sid: socket.value.id
-    });
-  }
+  redoStack.value = [];
 
-  menu.visible = false;
+  const touch = event.touches[0];
+  const { x, y } = screenToWorldCoordinates(touch.clientX, touch.clientY);
   
-  if (touches.length === 1) {
-    isMultiTouching = false;
-    isDrawing = false;
-    currentStroke = null;
-    potentialDrawingStart = true;
+  currentTempStrokeId = 'temp_' + Date.now();
 
-    const touch = touches[0];
-    touchStartCoords = { x: touch.clientX, y: touch.clientY, time: Date.now() };
-
-    clearTimeout(longPressTimer);
-    longPressTimer = setTimeout(() => {
-      if (potentialDrawingStart && !isMultiTouching) {
-        if (socket.value) socket.value.emit('debug_touch_event', { type: 'touchstart_LongPress_TimerFired_Successfully', sid: socket.value.id });
-        showContextMenuAt(touchStartCoords.x, touchStartCoords.y);
-      } else {
-        if (socket.value) socket.value.emit('debug_touch_event', { type: 'touchstart_LongPress_TimerFired_But_Invalidated', potentialDrawingStart, isMultiTouching, sid: socket.value.id });
-      }
-      longPressTimer = null;
-    }, longPressDuration);
-
-    if (socket.value) {
-      socket.value.emit('debug_touch_event', {
-        type: 'touchstart_SingleTouch_PotentialStartSet',
-        coords: { x: touch.clientX, y: touch.clientY },
-        potentialDrawingStart_state: potentialDrawingStart,
-        sid: socket.value.id
-      });
-    }
-  
-  } else if (touches.length >= 2) {
-    if (socket.value) socket.value.emit('debug_touch_event', { type: 'touchstart_MultiTouch_Initiated', sid: socket.value.id, touches: touches.length });
-    
-    clearTimeout(longPressTimer);
-    longPressTimer = null;
-    potentialDrawingStart = false;
-
-    if (isDrawing && currentStroke) {
-        if (currentStroke.points.length > 1 && socket.value) {
-            socket.value.emit('draw_stroke_event', { points: currentStroke.points, color: currentStroke.color, lineWidth: currentStroke.lineWidth });
-        } else if(currentStroke) {
-            const index = strokes.value.indexOf(currentStroke);
-            if (index > -1) strokes.value.splice(index, 1);
-        }
-    }
-    isDrawing = false; 
-    currentStroke = null;
-    isMultiTouching = true;
-
-    const t1 = touches[0];
-    const t2 = touches[1];
-    initialGestureInfo.pinchDistance = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-    const screenMidX = (t1.clientX - rect.left + t2.clientX - rect.left) / 2;
-    const screenMidY = (t1.clientY - rect.top + t2.clientY - rect.top) / 2;
-    initialGestureInfo.midpoint = { x: screenMidX, y: screenMidY };
-    initialGestureInfo.worldMidpoint = screenToWorldCoordinates(screenMidX, screenMidY);
-    initialGestureInfo.offsetX = viewportState.offsetX;
-    initialGestureInfo.offsetY = viewportState.offsetY;
-    initialGestureInfo.scale = viewportState.scale;
-    redraw();
-  }
+  const newStroke = {
+    id: currentTempStrokeId,
+    user_id: userInfo.value.id,
+    points: [{ x, y }],
+    color: drawingSettings.color,
+    lineWidth: drawingSettings.lineWidth,
+    is_temp: true,
+  };
+  strokes.value.push(newStroke);
+  redraw();
 }
 
 function handleTouchMove(event) {
   event.preventDefault();
-  const touches = event.touches;
-  const rect = viewportCanvasRef.value.getBoundingClientRect();
+  if (!isDrawing) return;
 
-  if (socket.value && touches.length > 0) {
-    const touchDataForDebug = Array.from(touches).map(t => ({ id: t.identifier, clientX: t.clientX, clientY: t.clientY }));
-    socket.value.emit('debug_touch_event', {
-      type: 'touchmove_ENTRY',
-      touchesLength: touches.length,
-      isDrawing_state: isDrawing,
-      isMultiTouching_state: isMultiTouching,
-      currentStroke_exists: !!currentStroke,
-      longPressTimer_active: !!longPressTimer,
-      potentialDrawingStart_state: potentialDrawingStart,
-      sid: socket.value.id,
-      touchData: touchDataForDebug
-    });
-  }
-
-  if (touches.length === 1 && !isMultiTouching) {
-    const touch = touches[0];
-    const screenX = touch.clientX - rect.left;
-    const screenY = touch.clientY - rect.top;
-
-    if (potentialDrawingStart) {
-      const deltaX = touch.clientX - touchStartCoords.x;
-      const deltaY = touch.clientY - touchStartCoords.y;
-
-      if (Math.hypot(deltaX, deltaY) > longPressMoveThreshold) {
-        if (longPressTimer) {
-          if (socket.value) socket.value.emit('debug_touch_event', { type: 'touchmove_SingleTouch_LongPressCancelledByMove', sid: socket.value.id });
-          clearTimeout(longPressTimer);
-          longPressTimer = null;
-        }
-        
-        if (!isDrawing) {
-          isDrawing = true;
-          potentialDrawingStart = false;
-          
-          const initialWorldCoords = screenToWorldCoordinates(touchStartCoords.x - rect.left, touchStartCoords.y - rect.top);
-          currentStroke = {
-            points: [initialWorldCoords],
-            color: drawingSettings.color,
-            lineWidth: drawingSettings.lineWidth,
-          };
-          strokes.value.push(currentStroke);
-          if (socket.value) {
-            socket.value.emit('debug_touch_event', {
-              type: 'touchmove_SingleTouch_DrawingActuallyStarted',
-              isDrawing_state: isDrawing,
-              worldX: initialWorldCoords.x, worldY: initialWorldCoords.y,
-              sid: socket.value.id
-            });
-          }
-          const currentWorldCoords = screenToWorldCoordinates(screenX, screenY);
-          currentStroke.points.push(currentWorldCoords);
-          redraw();
-        }
-      }
-    }
-    
-    if (isDrawing && currentStroke) {
-      const worldCoords = screenToWorldCoordinates(screenX, screenY);
-      const lastPoint = currentStroke.points[currentStroke.points.length -1];
-      if (!lastPoint || lastPoint.x !== worldCoords.x || lastPoint.y !== worldCoords.y) {
-          currentStroke.points.push(worldCoords);
-      }
-
-      if (socket.value) socket.value.emit('debug_touch_event', { type: 'touchmove_SingleTouch_PointAddedToStroke', points: currentStroke.points.length, sid: socket.value.id });
-      redraw();
-    } else if (touches.length === 1 && !isDrawing && !potentialDrawingStart && socket.value ) {
-        socket.value.emit('debug_touch_event', { type: 'touchmove_SingleTouch_MoveIgnored_NotDrawingNotPotential', sid: socket.value.id });
-    }
-
-  } else if (touches.length >= 2 && isMultiTouching) {
-    if (socket.value) socket.value.emit('debug_touch_event', { type: 'touchmove_MultiTouch_Processing', sid: socket.value.id, touches: touches.length });
-    
-    clearTimeout(longPressTimer);
-    longPressTimer = null;
-    potentialDrawingStart = false;
-    isDrawing = false;
-
-    const t1 = touches[0];
-    const t2 = touches[1];
-    const currentScreenMidX = (t1.clientX - rect.left + t2.clientX - rect.left) / 2;
-    const currentScreenMidY = (t1.clientY - rect.top + t2.clientY - rect.top) / 2;
-    const currentPinchDistance = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-    let scaleFactor = 1;
-    if (initialGestureInfo.pinchDistance > 0) {
-      scaleFactor = currentPinchDistance / initialGestureInfo.pinchDistance;
-    }
-    let newScale = initialGestureInfo.scale * scaleFactor;
-    newScale = Math.max(0.05, Math.min(newScale, 20));
-    viewportState.scale = newScale;
-    viewportState.offsetX = currentScreenMidX - initialGestureInfo.worldMidpoint.x * newScale;
-    viewportState.offsetY = currentScreenMidY - initialGestureInfo.worldMidpoint.y * newScale;
+  const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
+  if (activeStroke) {
+    const touch = event.touches[0];
+    const { x, y } = screenToWorldCoordinates(touch.clientX, touch.clientY);
+    activeStroke.points.push({ x, y });
     redraw();
   }
 }
 
 function handleTouchEnd(event) {
-  if (isMultiTouching) {
-    isMultiTouching = false;
-    return;
-  }
-  clearTimeout(longPressTimer);
+  event.preventDefault();
+  if (!isDrawing) return;
+  isDrawing = false;
 
-  if (isDrawing && currentStroke) {
-    if (currentStroke.points.length > 1 && socket.value) {
-        socket.value.emit('draw_stroke_event', {
-        board_id: currentBoardId.value,
-          points: currentStroke.points,
-          color: currentStroke.color,
-          lineWidth: currentStroke.lineWidth
-        });
-    } else if (currentStroke.points.length <= 1) {
-      const index = strokes.value.indexOf(currentStroke);
-      if (index > -1) {
-        strokes.value.splice(index, 1);
-      }
-      redraw(); 
-    }
+  const finalStroke = strokes.value.find(s => s.id === currentTempStrokeId);
+
+  if (finalStroke && finalStroke.points.length > 1 && socket.value) {
+    socket.value.emit('draw_stroke_event', {
+      board_id: currentBoardId.value,
+      user_email: userInfo.value.email,
+      points: finalStroke.points,
+      color: finalStroke.color,
+      lineWidth: finalStroke.lineWidth,
+      temp_id: finalStroke.id,
+    });
   }
-  
-    isDrawing = false;
-    currentStroke = null;
-  potentialDrawingStart = false;
+  currentTempStrokeId = null;
 }
 
 function showContextMenu(event) {
