@@ -180,34 +180,34 @@ const recognizer = new DollarRecognizer();
 // --- Fim da Configuração do Reconhecedor ---
 
 onMounted(() => {
-  // Define os modelos de formas para o reconhecedor, usando templates normalizados.
+  // Define os modelos de formas para o reconhecedor.
+  // Estes são templates mais robustos e normalizados para melhorar a precisão.
   const templates = {
-    line: [ {X:20,Y:20}, {X:230,Y:230} ],
-    triangle: [
-      { X: 130, Y: 16 }, { X: 26, Y: 244 }, { X: 234, Y: 244 }, { X: 130, Y: 16 }
+    line: [ {X:0,Y:0}, {X:250,Y:0} ], // Linha horizontal simples
+    rectangle: [ // Retângulo (não um quadrado)
+      {X:0, Y:0}, {X:200, Y:0}, {X:200, Y:150}, {X:0, Y:150}, {X:0, Y:0}
     ],
-    rectangle: [
-      { X: 30, Y: 30 }, { X: 220, Y: 30 }, { X: 220, Y: 220 }, { X: 30, Y: 220 }, { X: 30, Y: 30 }
+    circle: [ // Círculo mais bem definido
+      {X:125,Y:24.8},{X:154.9,Y:34.7},{X:181.1,Y:51.5},{X:202.1,Y:73.4},{X:216.3,Y:98.5},
+      {X:222.5,Y:125},{X:221,Y:151.5},{X:212.3,Y:176.6},{X:197.6,Y:198},{X:178,Y:214.3},
+      {X:155,Y:225.2},{X:125,Y:225.2},{X:95.1,Y:225.2},{X:72,Y:214.3},{X:52.4,Y:198},
+      {X:37.7,Y:176.6},{X:29,Y:151.5},{X:27.5,Y:125},{X:33.7,Y:98.5},{X:47.9,Y:73.4},
+      {X:68.9,Y:51.5},{X:95,Y:34.7},{X:125,Y:24.8}
     ],
-    circle: [
-      { X: 182, Y: 92 }, { X: 172, Y: 115 }, { X: 156, Y: 135 }, { X: 135, Y: 156 }, { X: 115, Y: 172 },
-      { X: 92, Y: 182 }, { X: 68, Y: 182 }, { X: 44, Y: 172 }, { X: 25, Y: 156 }, { X: 14, Y: 135 },
-      { X: 14, Y: 115 }, { X: 25, Y: 92 }, { X: 44, Y: 68 }, { X: 68, Y: 44 }, { X: 92, Y: 25 },
-      { X: 115, Y: 14 }, { X: 135, Y: 14 }, { X: 156, Y: 25 }, { X: 172, Y: 44 }, { X: 182, Y: 68 },
-      { X: 182, Y: 92 }
+    triangle: [ // Triângulo Isósceles
+        {X:125, Y:0}, {X:0, Y:216.5}, {X:250, Y:216.5}, {X:125, Y:0}
     ],
-     star: [
-        {X: 125, Y: 20}, {X: 155, Y: 80}, {X: 220, Y: 80}, {X: 170, Y: 130}, 
-        {X: 190, Y: 190}, {X: 125, Y: 150}, {X: 60, Y: 190}, {X: 80, Y: 130}, 
-        {X: 30, Y: 80}, {X: 100, Y: 80}, {X: 125, Y: 20}
+    star: [
+        {X:125,Y:0},{X:159.5,Y:82.6},{X:250,Y:95.1},{X:184.5,Y:154.9},{X:202.1,Y:250},
+        {X:125,Y:202.1},{X:47.9,Y:250},{X:65.5,Y:154.9},{X:0,Y:95.1},{X:90.5,Y:82.6},{X:125,Y:0}
     ]
   };
 
-  recognizer.AddUnistroke('line', templates.line);
-  recognizer.AddUnistroke('triangle', templates.triangle);
-  recognizer.AddUnistroke('rectangle', templates.rectangle);
-  recognizer.AddUnistroke('circle', templates.circle);
-  recognizer.AddUnistroke('star', templates.star);
+  recognizer.AddUnistroke('line', templates.line.map(p => ({...p})));
+  recognizer.AddUnistroke('triangle', templates.triangle.map(p => ({...p})));
+  recognizer.AddUnistroke('rectangle', templates.rectangle.map(p => ({...p})));
+  recognizer.AddUnistroke('circle', templates.circle.map(p => ({...p})));
+  recognizer.AddUnistroke('star', templates.star.map(p => ({...p})));
   
   setupViewportAndWorld();
   window.addEventListener('resize', setupViewportAndWorld);
@@ -474,7 +474,8 @@ function handleMouseUp(event) {
     // Tenta reconhecer a forma antes de finalizar
     if (finalStroke.points.length > 10) { 
         // 1. Simplificar o traço com RDP para remover ruído e manter apenas os vértices.
-        const simplifiedPoints = rdp(finalStroke.points, 2.0);
+        // Um epsilon maior simplifica mais a curva.
+        const simplifiedPoints = rdp(finalStroke.points, 8.0); 
         console.log(`Original points: ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
 
         // 2. Converter pontos para o formato {X, Y} que o nosso reconhecedor espera
@@ -719,7 +720,7 @@ function handleTouchEnd(event) {
     // Tenta reconhecer a forma
     if (finalStroke.points.length > 10) {
         // 1. Simplificar o traço com RDP
-        const simplifiedPoints = rdp(finalStroke.points, 2.0);
+        const simplifiedPoints = rdp(finalStroke.points, 8.0);
         console.log(`Original points (Touch): ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
 
         // 2. Converter e Reconhecer
