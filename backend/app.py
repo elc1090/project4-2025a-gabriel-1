@@ -200,7 +200,7 @@ def handle_disconnect():
     sid = request.sid
     print(f"Cliente {sid} desconectado")
 
-    # Se o SID pertencer a um convidado, remove o usuário do banco de dados.
+    # Se o SID pertencer a um convidado, remove o usuário e seus dados do banco.
     if sid in guest_sids:
         user_id_to_delete = guest_sids[sid]
         print(f"SID {sid} pertence a um convidado. Tentando limpar o usuário com ID {user_id_to_delete}...")
@@ -208,16 +208,18 @@ def handle_disconnect():
         try:
             user = User.query.get(user_id_to_delete)
             if user:
-                # A relação 'accessible_whiteboards' é carregada dinamicamente (lazy='dynamic'),
-                # o que significa que se comporta como uma query, não uma lista. Portanto, .clear() não funciona.
-                # Para desassociar o usuário de todos os quadros, iteramos sobre uma cópia da lista
-                # e removemos cada um. A alteração será commitada junto com a exclusão do usuário.
-                for board in list(user.accessible_whiteboards):
-                    user.accessible_whiteboards.remove(board)
+                # 1. Deletar todos os traços criados pelo usuário em todas as lousas.
+                Stroke.query.filter_by(user_id=user_id_to_delete).delete()
+                
+                # 2. Remover as permissões de acesso do usuário de todas as lousas.
+                # A forma mais direta é usar a tabela de associação.
+                db.session.query(whiteboard_access).filter_by(user_id=user_id_to_delete).delete()
 
+                # 3. Agora podemos deletar o usuário com segurança.
                 db.session.delete(user)
+                
                 db.session.commit()
-                print(f"Usuário convidado {user.name} (ID: {user_id_to_delete}) foi removido com sucesso.")
+                print(f"Usuário convidado e todos os seus dados (ID: {user_id_to_delete}) foram removidos com sucesso.")
             else:
                 print(f"Usuário convidado com ID {user_id_to_delete} não encontrado para exclusão.")
         except Exception as e:
