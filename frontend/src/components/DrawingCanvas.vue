@@ -895,6 +895,18 @@ const createPerfectShape = (shapeName, originalStroke, simplifiedPoints) => {
             const { cx, cy, width, height } = getBoundingBox(originalStroke.points);
             perfectPoints = createPolygon(32, cx, cy, Math.min(width, height) / 2);
             break;
+        case 'square':
+            // NOVO: Cria um quadrado perfeito alinhado aos eixos
+            const box = getBoundingBox(originalStroke.points);
+            const side = (box.width + box.height) / 2; // Média para um lado perfeito
+            perfectPoints = [
+                { x: box.cx - side / 2, y: box.cy - side / 2 },
+                { x: box.cx + side / 2, y: box.cy - side / 2 },
+                { x: box.cx + side / 2, y: box.cy + side / 2 },
+                { x: box.cx - side / 2, y: box.cy + side / 2 },
+                { x: box.cx - side / 2, y: box.cy - side / 2 } // Fecha a forma
+            ];
+            break;
         case 'rectangle':
             // NOVO: Usa os 4 vértices simplificados para preservar a rotação/forma.
             const rectVertices = simplifiedPoints.slice(0, 4);
@@ -1012,18 +1024,21 @@ function analyzeShape(points) {
              angles.push(getAngle(p1, p2, p3));
         }
         
-        // Retângulo/Quadrado: 4 a 6 pontos (dando margem para cantos imperfeitos)
+        // Retângulo/Quadrado: 4 a 6 pontos, análise mais rigorosa
         if (numPoints >= 4 && numPoints <= 6) {
-            // Procura por ângulos "quase retos" para identificar a intenção de um retângulo.
-            const nearRightAngles = angles.filter(angle => angle > 75 && angle < 105).length;
+            // Ângulos mais rigorosos para evitar trapézios
+            const nearRightAngles = angles.filter(angle => angle > 80 && angle < 100).length;
+            const { width, height } = getBoundingBox(points);
+            const aspectRatio = Math.min(width, height) / Math.max(width, height);
 
-            // Um retângulo/quadrado deve ter pelo menos 3 ângulos quase retos.
+            // Prioridade 1: Quadrado. Requer 4 ângulos retos e proporção "quadrada".
+            if (nearRightAngles >= 4 && aspectRatio > 0.88) {
+                return { name: 'square', confidence: 0.95 };
+            }
+            
+            // Prioridade 2: Retângulo. Requer pelo menos 3 ângulos retos.
             if (nearRightAngles >= 3) {
-                // Aumenta a confiança se a proporção for próxima a de um quadrado
-                const { width, height } = getBoundingBox(points);
-                const aspectRatio = Math.min(width, height) / Math.max(width, height);
-                const confidence = aspectRatio > 0.80 ? 0.95 : 0.90;
-                return { name: 'rectangle', confidence };
+                return { name: 'rectangle', confidence: 0.90 };
             }
         }
 
