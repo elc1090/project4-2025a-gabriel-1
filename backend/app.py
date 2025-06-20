@@ -233,6 +233,7 @@ def handle_draw_stroke_event(data):
     """Recebe um traço completo do cliente e o retransmite para outros na mesma sala."""
     board_id = data.get('board_id')
     user_email = data.get('user_email')
+    temp_id = data.get('temp_id') # Pega o ID temporário
     
     if not all([board_id, user_email, 'points' in data, 'color' in data, 'lineWidth' in data]):
         print("Evento de desenho recebido com dados incompletos. Ignorando.")
@@ -266,7 +267,8 @@ def handle_draw_stroke_event(data):
             'board_id': board_id,
             'color': new_stroke.color,
             'lineWidth': new_stroke.line_width,
-            'points': data['points']
+            'points': data['points'],
+            'temp_id': temp_id # Devolve o ID temporário
         }
         room = f"board_{board_id}"
         socketio.emit('stroke_received', stroke_data_for_broadcast, to=room) # Envia para todos na sala
