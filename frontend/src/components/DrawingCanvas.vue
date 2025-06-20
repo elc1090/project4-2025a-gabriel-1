@@ -436,10 +436,10 @@ function handleMouseUp(event) {
 
     if (!finalStroke) return;
 
-    // Tenta reconhecer a forma
+    // Tenta reconhecer a forma antes de finalizar
     if (finalStroke.points.length > 4) { 
         // 1. Simplificar o traço com RDP para extrair os vértices principais
-        const simplifiedPoints = rdp(finalStroke.points, 2.5);
+        const simplifiedPoints = rdp(finalStroke.points, 4.0); // Epsilon ajustado
         console.log(`Original points: ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
 
         // 2. Analisar a forma com base nos seus pontos simplificados
@@ -682,7 +682,7 @@ function handleTouchEnd(event) {
 
     // Tenta reconhecer a forma
     if (finalStroke.points.length > 4) {
-        const simplifiedPoints = rdp(finalStroke.points, 2.5);
+        const simplifiedPoints = rdp(finalStroke.points, 4.0); // Epsilon ajustado
         console.log(`Original points (Touch): ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
 
         const shape = analyzeShape(simplifiedPoints);
@@ -747,7 +747,9 @@ function handleMenuSelection(action, value) {
 }
 
 function getDistance(p1, p2) {
-  // ... existing code ...
+  const dx = p1.x - p2.x;
+  const dy = p1.y - p2.y;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
 const setTool = (tool) => {
@@ -850,10 +852,13 @@ const createPerfectShape = (shapeName, originalStroke) => {
     let perfectPoints = [];
     switch (shapeName) {
         case 'line':
-            perfectPoints = [ { x: minX, y: minY }, { x: maxX, y: maxY } ];
+            perfectPoints = [ 
+                { x: originalStroke.points[0].x, y: originalStroke.points[0].y },
+                { x: originalStroke.points[originalStroke.points.length - 1].x, y: originalStroke.points[originalStroke.points.length - 1].y }
+            ];
             break;
         case 'circle':
-            perfectPoints = createPolygon(32, cx, cy, radius);
+            perfectPoints = createPolygon(32, cx, cy, Math.min(width, height) / 2); // Usa o menor raio para elipses
             break;
         case 'rectangle':
             perfectPoints = [
@@ -938,57 +943,76 @@ function getAngle(p1, p2, p3) {
 function analyzeShape(points) {
     const numPoints = points.length;
 
-    // Se for uma linha (ou quase), RDP a terá simplificado para 2 pontos.
+    if (numPoints < 2) return { name: 'unknown', confidence: 0 };
+
+    // Calcula o bounding box e o comprimento total para normalização
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let pathLength = 0;
+    for (let i = 0; i < points.length; i++) {
+        minX = Math.min(minX, points[i].x);
+        minY = Math.min(minY, points[i].y);
+        maxX = Math.max(maxX, points[i].x);
+        maxY = Math.max(maxY, points[i].y);
+        if (i > 0) {
+            pathLength += getDistance(points[i-1], points[i]);
+        }
+    }
+    const width = maxX - minX;
+    const height = maxY - minY;
+    const diagonal = Math.sqrt(width*width + height*height);
+
+    // Linha: 2 pontos após RDP.
     if (numPoints === 2) {
         return { name: 'line', confidence: 1.0 };
     }
     
-    // Para polígonos, verifica se o traço é fechado
+    // Verifica se a forma é fechada (distância entre início e fim é pequena em relação ao tamanho)
     const start = points[0];
     const end = points[numPoints - 1];
-    const distance = getDistance(start, end);
-    const isClosed = distance < 25; // Limiar para considerar o polígono fechado
+    const isClosed = getDistance(start, end) < diagonal * 0.25; // Limiar de fechamento dinâmico
 
+    // Análise para polígonos fechados
     if (isClosed && numPoints >= 3 && numPoints <= 6) {
         let angles = [];
-        for (let i = 0; i < numPoints -1; i++) { // Ignora o ponto de fechamento
-             const p1 = points[(i - 1 + (numPoints - 1)) % (numPoints - 1)];
+        // Para uma forma fechada com N pontos, temos N ângulos internos.
+        for (let i = 0; i < numPoints - 1; i++) {
+             const p1 = points[(i + numPoints - 2) % (numPoints-1)];
              const p2 = points[i];
              const p3 = points[(i + 1) % (numPoints - 1)];
              angles.push(getAngle(p1, p2, p3));
         }
         
-        // Retângulo/Quadrado: 4 cantos com ~90 graus
-        if (angles.length >= 4 && angles.length <= 5) { // Permite alguma imprecisão no RDP
-            const rightAngles = angles.filter(angle => angle > 70 && angle < 110).length;
+        // Retângulo/Quadrado: 4 ou 5 pontos (devido ao fechamento), 4 ângulos retos
+        if (numPoints >= 4 && numPoints <= 5) {
+            const rightAngles = angles.filter(angle => angle > 65 && angle < 115).length;
             if (rightAngles >= 3) {
                 return { name: 'rectangle', confidence: 0.9 };
             }
         }
 
-        // Triângulo: 3 cantos
-        if (angles.length >= 3 && angles.length <= 4) {
-             const sharpAngles = angles.filter(angle => angle > 20 && angle < 150).length;
-             if (sharpAngles >= 2) { // Precisa de pelo menos 2 ângulos "razoáveis"
+        // Triângulo: 3 ou 4 pontos (devido ao fechamento), 3 ângulos
+        if (numPoints >= 3 && numPoints <= 4) {
+             const sharpAngles = angles.filter(angle => angle > 30 && angle < 140).length;
+             if (sharpAngles >= 2) {
                  return { name: 'triangle', confidence: 0.9 };
              }
         }
     }
     
-    // Círculo: Muitos pontos após RDP, e a largura/altura são semelhantes
-    if (isClosed && numPoints > 6) {
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        points.forEach(p => {
-            minX = Math.min(minX, p.x);
-            minY = Math.min(minY, p.y);
-            maxX = Math.max(maxX, p.x);
-            maxY = Math.max(maxY, p.y);
-        });
-        const width = maxX - minX;
-        const height = maxY - minY;
-        const aspectRatio = Math.min(width, height) / Math.max(width, height);
-        if (aspectRatio > 0.75) { // Se for "quase redondo"
-            return { name: 'circle', confidence: 0.9 };
+    // Análise para Círculo/Elipse
+    if (isClosed && numPoints > 5) {
+        // Área aproximada usando a fórmula de Shoelace
+        let area = 0;
+        for (let i = 0; i < numPoints - 1; i++) {
+            area += (points[i].x * points[i+1].y - points[i+1].x * points[i].y);
+        }
+        area = Math.abs(area / 2);
+
+        const circularity = (4 * Math.PI * area) / (pathLength * pathLength);
+        
+        console.log("Circularity score:", circularity);
+        if (circularity > 0.7) {
+            return { name: 'circle', confidence: circularity };
         }
     }
 
