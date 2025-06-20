@@ -49,7 +49,7 @@
 import { ref, reactive, onMounted, onUnmounted, computed } from 'vue';
 import ContextMenu from './ContextMenu.vue';
 import WhiteboardMenu from './WhiteboardMenu.vue';
-import { useUserInfo } from '../services/userInfo';
+import { userInfo } from '../services/userInfo';
 import { io } from 'socket.io-client';
 import GestureRecognizer from '@2players/dollar1-unistroke-recognizer';
 
@@ -482,14 +482,17 @@ function handleMouseMove(event) {
 }
 
 function handleMouseUp(event) {
+  // Finaliza o desenho com o pincel
   if (event.button === 0 && isDrawing && currentTool.value === 'pencil') {
     isDrawing = false;
     const finalStroke = strokes.value.find(s => s.id === currentTempStrokeId);
 
+    if (!finalStroke) return;
+
     // Tenta reconhecer a forma antes de finalizar
-    if (finalStroke && finalStroke.points.length > 10) { // Mínimo de pontos para reconhecer
+    if (finalStroke.points.length > 10) { 
         const result = recognizer.recognize(finalStroke.points, true);
-        if (result && result.score > 0.7) { // Limiar de confiança
+        if (result && result.score > 0.75) { // Limiar de confiança um pouco maior
             // Remove o traço desenhado
             const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
             if (index !== -1) {
@@ -499,12 +502,13 @@ function handleMouseUp(event) {
             // Cria a forma perfeita
             createPerfectShape(result.name, finalStroke);
             redraw();
-            currentTempStrokeId = null; // Limpa para não enviar o traço original
-            return; // Interrompe a função aqui
+            currentTempStrokeId = null;
+            return;
         }
     }
 
-    if (finalStroke && finalStroke.points.length > 1 && socket.value) {
+    // Se não for uma forma reconhecida, finaliza como um traço normal
+    if (finalStroke.points.length > 1 && socket.value) {
       socket.value.emit('draw_stroke_event', {
         board_id: currentBoardId.value,
         user_email: userInfo.value?.email,
@@ -513,16 +517,19 @@ function handleMouseUp(event) {
         lineWidth: finalStroke.lineWidth,
         temp_id: finalStroke.id,
       });
-    } else if (finalStroke) {
+    } else {
+      // Se for apenas um clique, remove o traço temporário
       const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
       if (index !== -1) {
-        strokes.value.splice(index, 1);
-        redraw();
+          strokes.value.splice(index, 1);
+          redraw();
       }
     }
-    currentTempStrokeId = null;
+    
+    currentTempStrokeId = null; // Limpa o ID temporário
   }
   
+  // Finaliza a ação da borracha
   if (event.button === 0 && isDrawing && currentTool.value === 'eraser') {
     isDrawing = false;
   }
@@ -725,39 +732,58 @@ function handleTouchEnd(event) {
   clearTimeout(longPressTimer);
 
   if (isDrawing) {
-    // Finaliza o desenho, mesma lógica de handleMouseUp
     const finalStroke = strokes.value.find(s => s.id === currentTempStrokeId);
     
+    if (!finalStroke) {
+        isDrawing = false;
+        potentialDrawingStart = false;
+        currentTempStrokeId = null;
+        return;
+    }
+
     // Tenta reconhecer a forma
-    if (finalStroke && finalStroke.points.length > 10) {
+    if (finalStroke.points.length > 10) {
         const result = recognizer.recognize(finalStroke.points, true);
-        if (result && result.score > 0.7) {
+        if (result && result.score > 0.75) {
             const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
             if (index !== -1) {
                 strokes.value.splice(index, 1);
             }
             createPerfectShape(result.name, finalStroke);
             redraw();
-            isDrawing = false;
-            potentialDrawingStart = false;
-            currentTempStrokeId = null;
-            return;
+        } else {
+            // Se não for forma, envia como traço normal
+            if (finalStroke.points.length > 1 && socket.value) {
+                socket.value.emit('draw_stroke_event', {
+                    board_id: currentBoardId.value,
+                    user_email: userInfo.value?.email,
+                    points: finalStroke.points,
+                    color: finalStroke.color,
+                    lineWidth: finalStroke.lineWidth,
+                    temp_id: finalStroke.id,
+                });
+            } else {
+                const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
+                if (index !== -1) strokes.value.splice(index, 1);
+                redraw();
+            }
         }
-    }
-
-    if (finalStroke && finalStroke.points.length > 1 && socket.value) {
-      socket.value.emit('draw_stroke_event', {
-        board_id: currentBoardId.value,
-        user_email: userInfo.value?.email,
-        points: finalStroke.points,
-        color: finalStroke.color,
-        lineWidth: finalStroke.lineWidth,
-        temp_id: finalStroke.id,
-      });
-    } else if (finalStroke) {
-      const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-      if (index !== -1) strokes.value.splice(index, 1);
-      redraw();
+    } else {
+        // Se não tiver pontos suficientes para reconhecimento, trata como traço normal
+        if (finalStroke.points.length > 1 && socket.value) {
+            socket.value.emit('draw_stroke_event', {
+                board_id: currentBoardId.value,
+                user_email: userInfo.value?.email,
+                points: finalStroke.points,
+                color: finalStroke.color,
+                lineWidth: finalStroke.lineWidth,
+                temp_id: finalStroke.id,
+            });
+        } else {
+            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
+            if (index !== -1) strokes.value.splice(index, 1);
+            redraw();
+        }
     }
   }
   
