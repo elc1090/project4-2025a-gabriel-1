@@ -51,8 +51,7 @@ import ContextMenu from './ContextMenu.vue';
 import WhiteboardMenu from './WhiteboardMenu.vue';
 import { userInfo } from '../services/userInfo';
 import { io } from 'socket.io-client';
-import * as tf from '@tensorflow/tfjs';
-import * as mobilenet from '@tensorflow-models/mobilenet';
+import GestureRecognizer from '@2players/dollar1-unistroke-recognizer';
 
 const props = defineProps({
   user: Object,
@@ -176,44 +175,27 @@ function handleBoardDeleted(deletedBoardId) {
   }
 }
 
-// --- Configuração do Reconhecimento de IA ---
-let model = null;
-const isLoadingModel = ref(true);
-
-const shapeClassMapping = {
-    'soccer ball': 'circle',
-    'basketball': 'circle',
-    'orange': 'circle',
-    'clock': 'circle',
-    'wall clock': 'circle',
-    'analog clock': 'circle',
-    'envelope': 'rectangle',
-    'monitor': 'rectangle',
-    'screen': 'rectangle',
-    'television': 'rectangle',
-    'picture frame': 'rectangle',
-    'mountain': 'triangle',
-    'volcano': 'triangle',
-    'pinwheel': 'star',
-    'starfish': 'star'
-};
-// --- Fim da Configuração de IA ---
+// --- Configuração do Reconhecedor de Formas ---
+const recognizer = new GestureRecognizer({ defaultStrokes: false });
+// --- Fim da Configuração do Reconhecedor ---
 
 onMounted(() => {
-  // Carrega o modelo de IA
-  async function loadModel() {
-    console.log("Carregando modelo MobileNet...");
-    try {
-      model = await mobilenet.load();
-      isLoadingModel.value = false;
-      console.log("Modelo carregado com sucesso.");
-    } catch (error) {
-      console.error("Falha ao carregar o modelo de IA:", error);
-      isLoadingModel.value = false;
-    }
-  }
-  loadModel();
-
+  // Define os modelos de formas para o reconhecedor
+  const size = 250; // Tamanho padrão para os modelos
+  const shapeTemplates = {
+      circle: createPolygon(32, size/2, size/2, size/2),
+      rectangle: [
+          {x:0,y:0},{x:size,y:0},{x:size,y:size},{x:0,y:size},{x:0,y:0}
+      ],
+      triangle: createPolygon(3, size/2, size/2, size/2),
+      star: createStar(size/2, size/2, size/2, size/4)
+  };
+  
+  recognizer.add('circle', shapeTemplates.circle);
+  recognizer.add('rectangle', shapeTemplates.rectangle);
+  recognizer.add('triangle', shapeTemplates.triangle);
+  recognizer.add('star', shapeTemplates.star);
+  
   setupViewportAndWorld();
   window.addEventListener('resize', setupViewportAndWorld);
   window.addEventListener('keydown', handleKeyDown);
@@ -476,11 +458,28 @@ function handleMouseUp(event) {
 
     if (!finalStroke) return;
 
-    if (finalStroke.points.length > 10 && !isLoadingModel.value && model) {
-      recognizeAndReplaceShape(finalStroke);
-    } else {
-      finalizeStroke(finalStroke);
+    // Tenta reconhecer a forma antes de finalizar
+    if (finalStroke.points.length > 10) { 
+        console.log("Pontos enviados para reconhecimento:", JSON.stringify(finalStroke.points));
+        const result = recognizer.recognize(finalStroke.points, true);
+        console.log('Shape Recognition Result:', result);
+        if (result && result.score > 0.70) {
+            // Remove o traço desenhado
+            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
+            if (index !== -1) {
+                strokes.value.splice(index, 1);
+            }
+            
+            // Cria a forma perfeita
+            createPerfectShape(result.name, finalStroke);
+            redraw();
+            currentTempStrokeId = null;
+            return; // Importante para não executar o código abaixo
+        }
     }
+
+    // Se não for uma forma reconhecida, finaliza como um traço normal
+    finalizeStroke(finalStroke);
     currentTempStrokeId = null;
   }
   
@@ -696,8 +695,21 @@ function handleTouchEnd(event) {
         return;
     }
 
-    if (finalStroke.points.length > 10 && !isLoadingModel.value && model) {
-        recognizeAndReplaceShape(finalStroke);
+    // Tenta reconhecer a forma
+    if (finalStroke.points.length > 10) {
+        console.log("Pontos (touch) enviados para reconhecimento:", JSON.stringify(finalStroke.points));
+        const result = recognizer.recognize(finalStroke.points, true);
+        console.log('Shape Recognition Result (Touch):', result);
+        if (result && result.score > 0.70) {
+            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
+            if (index !== -1) {
+                strokes.value.splice(index, 1);
+            }
+            createPerfectShape(result.name, finalStroke);
+            redraw();
+        } else {
+            finalizeStroke(finalStroke);
+        }
     } else {
         finalizeStroke(finalStroke);
     }
@@ -769,80 +781,6 @@ const finalizeStroke = (stroke) => {
       redraw();
     }
   }
-};
-
-// Nova função de reconhecimento de IA
-const recognizeAndReplaceShape = async (stroke) => {
-  // 1. Encontrar o Bounding Box do traço
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  stroke.points.forEach(p => {
-    minX = Math.min(minX, p.x);
-    minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x);
-    maxY = Math.max(maxY, p.y);
-  });
-  
-  const padding = 20; // Espaçamento para garantir que o traço não seja cortado
-  const boxWidth = (maxX - minX) + padding * 2;
-  const boxHeight = (maxY - minY) + padding * 2;
-  
-  if (boxWidth < 20 || boxHeight < 20) {
-      finalizeStroke(stroke);
-      return;
-  }
-
-  // 2. Criar um canvas temporário e desenhar o traço nele
-  const tempCanvas = document.createElement('canvas');
-  tempCanvas.width = boxWidth;
-  tempCanvas.height = boxHeight;
-  const tempCtx = tempCanvas.getContext('2d');
-  
-  // Fundo branco para que o modelo veja o desenho corretamente
-  tempCtx.fillStyle = 'white';
-  tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-  
-  tempCtx.strokeStyle = stroke.color;
-  tempCtx.lineWidth = stroke.lineWidth;
-  tempCtx.lineCap = 'round';
-  tempCtx.lineJoin = 'round';
-  tempCtx.beginPath();
-  
-  // Desenha o traço transladado para o canto (0,0) do canvas temporário
-  tempCtx.moveTo(stroke.points[0].x - minX + padding, stroke.points[0].y - minY + padding);
-  stroke.points.forEach(p => {
-    tempCtx.lineTo(p.x - minX + padding, p.y - minY + padding);
-  });
-  tempCtx.stroke();
-  
-  // 3. Fazer a predição com o modelo
-  try {
-    const predictions = await model.classify(tempCanvas);
-    console.log('IA Predictions:', predictions);
-
-    // 4. Analisar os resultados
-    if (predictions && predictions.length > 0) {
-      const bestPrediction = predictions[0];
-      const mappedShape = shapeClassMapping[bestPrediction.className.toLowerCase()];
-      
-      // Limiar de confiança - pode ser ajustado
-      if (mappedShape && bestPrediction.probability > 0.3) {
-        console.log(`Forma reconhecida: ${mappedShape} (de ${bestPrediction.className}) com confiança ${bestPrediction.probability}`);
-        // Remove o traço original
-        const index = strokes.value.findIndex(s => s.id === stroke.id);
-        if (index !== -1) strokes.value.splice(index, 1);
-        
-        // Cria a forma perfeita
-        createPerfectShape(mappedShape, stroke);
-        redraw();
-        return;
-      }
-    }
-  } catch (error) {
-    console.error("Erro durante a classificação da imagem:", error);
-  }
-
-  // Se nada foi reconhecido ou a confiança foi baixa, finaliza como um traço normal.
-  finalizeStroke(stroke);
 };
 
 // Função que cria e emite a forma perfeita
