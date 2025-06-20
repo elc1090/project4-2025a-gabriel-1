@@ -1,13 +1,20 @@
 <template>
   <div class="sidebar-container">
+    <button @click="setTool('pencil')" :class="{ 'active-tool': currentTool === 'pencil' }" title="Pincel" class="sidebar-button">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+    </button>
+    <button @click="setTool('eraser')" :class="{ 'active-tool': currentTool === 'eraser' }" title="Borracha" class="sidebar-button">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 13.5A3.5 3.5 0 0 0 17 10h-2.5a2.5 2.5 0 0 0-5 0H7a3.5 3.5 0 0 0-3.5 3.5V15a1 1 0 0 0 1 1h15a1 1 0 0 0 1-1v-1.5z"></path><path d="M17 10V5a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v5"></path></svg>
+    </button>
+    
+    <hr class="separator" />
+
     <WhiteboardMenu
       :selected-board-id="currentBoardId"
       @board-selected="handleBoardSelected"
       @board-created="handleBoardSelected"
       @board-deleted="handleBoardDeleted"
     />
-
-    <hr class="separator" />
 
     <button @click="undo" :disabled="!canUndo" title="Desfazer (Ctrl+Z)" class="sidebar-button">
       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-corner-up-left"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg>
@@ -95,6 +102,9 @@ const longPressMoveThreshold = 10;
 let isMultiTouching = false;
 let initialGestureInfo = {};
 let potentialDrawingStart = false;
+
+const currentTool = ref('pencil');
+const eraserSize = 20; // Raio da borracha em pixels do mundo
 
 const canUndo = computed(() => {
   return strokes.value.some(s => s.user_id === userInfo.value?.id);
@@ -368,15 +378,7 @@ function handleMouseDown(event) {
 }
 
 function handleMouseMove(event) {
-  if (isDrawing) {
-    const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
-    if (activeStroke) {
-      const { x, y } = getCanvasCoordinates(event);
-      activeStroke.points.push({ x, y });
-      redraw();
-    }
-  }
-  else if (viewportState.isPanning) {
+  if (viewportState.isPanning) {
     const dx = event.clientX - viewportState.lastPanX;
     const dy = event.clientY - viewportState.lastPanY;
     viewportState.offsetX += dx;
@@ -384,11 +386,51 @@ function handleMouseMove(event) {
     viewportState.lastPanX = event.clientX;
     viewportState.lastPanY = event.clientY;
     redraw();
+    return;
+  }
+
+  if (!isDrawing) return;
+
+  if (currentTool.value === 'pencil') {
+    const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
+    if (activeStroke) {
+      const { x, y } = getCanvasCoordinates(event);
+      activeStroke.points.push({ x, y });
+      redraw();
+    }
+  } else if (currentTool.value === 'eraser') {
+    const { x: cursorX, y: cursorY } = getCanvasCoordinates(event);
+    
+    // Itera sobre uma cópia para evitar problemas ao modificar o array
+    [...strokes.value].forEach(stroke => {
+      // Ignora traços temporários
+      if (stroke.is_temp) return;
+
+      const isHit = stroke.points.some(point => {
+        const distance = Math.hypot(point.x - cursorX, point.y - cursorY);
+        return distance < eraserSize / viewportState.scale; // Ajusta o tamanho da borracha com o zoom
+      });
+
+      if (isHit) {
+        // Remove o traço da UI imediatamente (UI Otimista)
+        const index = strokes.value.findIndex(s => s.id === stroke.id);
+        if (index !== -1) {
+          strokes.value.splice(index, 1);
+          redraw();
+
+          // Emite o evento para o servidor deletar permanentemente
+          socket.value.emit('erase_stroke', {
+            stroke_id: stroke.id,
+            board_id: currentBoardId.value
+          });
+        }
+      }
+    });
   }
 }
 
 function handleMouseUp(event) {
-  if (event.button === 0 && isDrawing) {
+  if (event.button === 0 && isDrawing && currentTool.value === 'pencil') {
     isDrawing = false;
     const finalStroke = strokes.value.find(s => s.id === currentTempStrokeId);
 
@@ -409,6 +451,10 @@ function handleMouseUp(event) {
       }
     }
     currentTempStrokeId = null;
+  }
+  
+  if (event.button === 0 && isDrawing && currentTool.value === 'eraser') {
+    isDrawing = false;
   }
   
   if (event.button === 1) {
@@ -545,11 +591,33 @@ function handleTouchMove(event) {
     }
     
     if (isDrawing) {
-      const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
-      if (activeStroke) {
-        const { x, y } = getCanvasCoordinates(touch);
-        activeStroke.points.push({ x, y });
-        redraw();
+      if (currentTool.value === 'pencil') {
+        const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
+        if (activeStroke) {
+          const { x, y } = getCanvasCoordinates(touch);
+          activeStroke.points.push({ x, y });
+          redraw();
+        }
+      } else if (currentTool.value === 'eraser') {
+        const { x: cursorX, y: cursorY } = getCanvasCoordinates(touch);
+        [...strokes.value].forEach(stroke => {
+          if (stroke.is_temp) return;
+          const isHit = stroke.points.some(point => {
+            const distance = Math.hypot(point.x - cursorX, point.y - cursorY);
+            return distance < eraserSize / viewportState.scale;
+          });
+          if (isHit) {
+            const index = strokes.value.findIndex(s => s.id === stroke.id);
+            if (index !== -1) {
+              strokes.value.splice(index, 1);
+              redraw();
+              socket.value.emit('erase_stroke', {
+                stroke_id: stroke.id,
+                board_id: currentBoardId.value
+              });
+            }
+          }
+        });
       }
     }
   } else if (touches.length >= 2 && isMultiTouching) {
@@ -645,6 +713,10 @@ function handleMenuSelection(action, value) {
 function getDistance(p1, p2) {
   // ... existing code ...
 }
+
+const setTool = (tool) => {
+  currentTool.value = tool;
+};
 </script>
 
 <style scoped>
@@ -693,6 +765,11 @@ function getDistance(p1, p2) {
 :deep(.whiteboard-menu-button:hover:not(:disabled)),
 .sidebar-button:hover:not(:disabled) {
   background-color: #f1f3f4;
+}
+
+.sidebar-button.active-tool {
+  background-color: #e8f0fe; /* Um azul claro para indicar seleção */
+  color: #1967d2; /* Um azul mais escuro para o ícone */
 }
 
 .sidebar-button:disabled {

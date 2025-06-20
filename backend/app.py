@@ -354,6 +354,27 @@ def handle_redo(data):
         redo_stacks[user.id].append(stroke_to_redo_data)
         print(f"Erro ao refazer traço: {e}")
 
+@socketio.on('erase_stroke')
+def handle_erase_stroke(data):
+    """Apaga um traço específico, geralmente acionado pela ferramenta de borracha."""
+    stroke_id = data.get('stroke_id')
+    board_id = data.get('board_id')
+    
+    if not all([stroke_id, board_id]):
+        print(f"Pedido para apagar traço com dados incompletos: {data}")
+        return
+
+    stroke_to_delete = db.session.get(Stroke, stroke_id)
+    
+    if stroke_to_delete:
+        db.session.delete(stroke_to_delete)
+        db.session.commit()
+        
+        room = f"board_{board_id}"
+        socketio.emit('stroke_removed', {'stroke_id': stroke_id, 'board_id': board_id}, to=room)
+        print(f"Traço {stroke_id} apagado da lousa {board_id}")
+    else:
+        print(f"Tentativa de apagar traço {stroke_id} que não foi encontrado.")
 
 @socketio.on('clear_canvas_event')
 def handle_clear_canvas_event(data):
