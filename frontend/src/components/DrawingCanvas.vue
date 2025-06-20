@@ -540,8 +540,21 @@ function showContextMenuAt(screenX, screenY) {
   }
   isDrawing = false;
 
-  menu.x = screenX;
-  menu.y = screenY;
+  // Lógica para ajustar a posição do menu e mantê-lo na tela.
+  const menuWidth = 250; // Largura estimada do menu
+  const menuHeight = 300; // Altura estimada do menu
+  let finalX = screenX;
+  let finalY = screenY;
+
+  if (finalX + menuWidth > window.innerWidth) {
+    finalX = window.innerWidth - menuWidth - 10; // 10px de margem
+  }
+  if (finalY + menuHeight > window.innerHeight) {
+    finalY = window.innerHeight - menuHeight - 10;
+  }
+
+  menu.x = finalX;
+  menu.y = finalY;
   menu.visible = true;
 }
 
@@ -1187,6 +1200,8 @@ function analyzeShape(points) {
     top: calc(100% + 12px);
     left: 50%;
     transform: translateX(-50%);
+    width: auto;
+    max-width: calc(100vw - 32px); /* Garante que não saia da tela */
   }
 }
 </style>

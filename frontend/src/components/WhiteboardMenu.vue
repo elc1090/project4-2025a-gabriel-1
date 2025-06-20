@@ -220,7 +220,7 @@ watch(userInfo, (newUserInfo) => {
   border-radius: 12px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.15);
   width: 320px;
-  max-height: 90vh;
+  max-height: 85vh;
   display: flex;
   flex-direction: column;
   color: #202124;
