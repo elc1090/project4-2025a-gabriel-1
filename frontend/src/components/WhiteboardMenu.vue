@@ -449,7 +449,7 @@ watch(userInfo, (newUserInfo) => {
   }
 
   .boards-title {
-    font-size: 1.1em;
+    font-size: 1em;
     padding: 4px 12px;
   }
 

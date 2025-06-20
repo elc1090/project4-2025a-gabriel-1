@@ -1182,12 +1182,15 @@ function analyzeShape(points) {
     width: auto;
   }
 
+  :deep(.whiteboard-menu-wrapper) {
+    position: static; /* Permite que o menu se posicione em relação à viewport */
+  }
+
   :deep(.menu-content) {
-    /* Reposiciona o menu para abrir para baixo, centralizado */
-    top: calc(100% + 12px);
+    position: fixed; /* Posicionamento relativo à janela do navegador */
+    top: 80px; /* Distância do topo para aparecer abaixo da topbar */
     left: 50%;
     transform: translateX(-50%);
-    width: 320px; /* Mantém a largura original como base */
     max-width: calc(100vw - 32px); /* Garante que não saia da tela */
   }
 }
