@@ -46,17 +46,25 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, computed } from 'vue';
+import { ref, reactive, onMounted, onUnmounted, computed, nextTick, defineProps } from 'vue';
 import ContextMenu from './ContextMenu.vue';
 import WhiteboardMenu from './WhiteboardMenu.vue';
 import { userInfo } from '../services/userInfo';
-import { io } from 'socket.io-client';
+import io from 'socket.io-client';
 
 const props = defineProps({
   user: Object,
+  whiteboardId: {
+    type: Number,
+    required: true
+  },
+  shapeRecognitionEnabled: {
+    type: Boolean,
+    required: true
+  }
 });
 
-const socket = ref(null);
+let socket;
 const currentBoardId = ref(1);
 
 const viewportCanvasRef = ref(null);
@@ -115,7 +123,7 @@ const canRedo = computed(() => {
 
 const undo = () => {
   if (!canUndo.value) return;
-  socket.value.emit('undo_request', { 
+  socket.emit('undo_request', { 
     user_email: userInfo.value.email,
     board_id: currentBoardId.value
   });
@@ -123,7 +131,7 @@ const undo = () => {
 
 const redo = () => {
   if (!canRedo.value) return;
-  socket.value.emit('redo_request', { 
+  socket.emit('redo_request', { 
     user_email: userInfo.value.email,
     board_id: currentBoardId.value
   });
@@ -142,7 +150,7 @@ const handleKeyDown = (event) => {
 };
 
 function switchBoard(board) {
-  if (!socket.value || !socket.value.connected) return;
+  if (!socket || !socket.connected) return;
 
   const boardId = typeof board === 'object' ? board.id : board;
   
@@ -156,7 +164,7 @@ function switchBoard(board) {
 
   currentBoardId.value = boardId;
   
-  socket.value.emit('join_board', {
+  socket.emit('join_board', {
     board_id: currentBoardId.value,
     user_email: userInfo.value?.email
   });
@@ -179,26 +187,26 @@ onMounted(() => {
   window.addEventListener('keydown', handleKeyDown);
 
   const backendUrl = import.meta.env.VITE_API_URL || 'https://project3-2025a-gabriel.onrender.com';
-  socket.value = io(backendUrl, {
+  socket = io(backendUrl, {
     transports: ['websocket', 'polling']
   });
 
-  socket.value.on('connect', () => {
-    console.log('FRONTEND: Conectado ao servidor Socket.IO com ID:', socket.value.id);
+  socket.on('connect', () => {
+    console.log('FRONTEND: Conectado ao servidor Socket.IO com ID:', socket.id);
     if (userInfo.value?.email) {
-      socket.value.emit('join_board', { board_id: currentBoardId.value, user_email: userInfo.value.email });
+      socket.emit('join_board', { board_id: currentBoardId.value, user_email: userInfo.value.email });
     }
   });
 
-  socket.value.on('connection_established', (data) => {
+  socket.on('connection_established', (data) => {
     console.log('FRONTEND: ' + data.message, 'SID do servidor:', data.sid);
   });
 
-  socket.value.on('disconnect', () => {
+  socket.on('disconnect', () => {
     console.log('FRONTEND: Desconectado do servidor Socket.IO');
   });
 
-  socket.value.on('initial_drawing', (data) => {
+  socket.on('initial_drawing', (data) => {
     console.log(`FRONTEND: Recebendo desenho inicial para lousa.`, data.strokes.length, 'traços');
     strokes.value = data.strokes.map(strokeData => ({
       id: strokeData.id,
@@ -210,7 +218,7 @@ onMounted(() => {
     redraw();
   });
 
-  socket.value.on('stroke_received', (strokeData) => {
+  socket.on('stroke_received', (strokeData) => {
     if (strokeData.board_id !== currentBoardId.value) return;
 
     if (strokeData.temp_id && strokeData.user_id === userInfo.value.id) {
@@ -238,7 +246,7 @@ onMounted(() => {
     redraw();
   });
 
-  socket.value.on('stroke_removed', (data) => {
+  socket.on('stroke_removed', (data) => {
     if (data.board_id !== currentBoardId.value) return;
     
     const index = strokes.value.findIndex(s => s.id === data.stroke_id);
@@ -253,7 +261,7 @@ onMounted(() => {
     }
   });
 
-  socket.value.on('canvas_cleared', (data) => {
+  socket.on('canvas_cleared', (data) => {
     if (data.board_id !== currentBoardId.value) return;
 
     console.log(`FRONTEND: Evento de limpar canvas recebido do servidor para a lousa ${data.board_id}.`);
@@ -266,8 +274,8 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', setupViewportAndWorld);
   window.removeEventListener('keydown', handleKeyDown);
-  if (socket.value) {
-    socket.value.disconnect();
+  if (socket) {
+    socket.disconnect();
   }
 });
 
@@ -418,7 +426,7 @@ function handleMouseMove(event) {
           redraw();
 
           // Emite o evento para o servidor deletar permanentemente
-          socket.value.emit('erase_stroke', {
+          socket.emit('erase_stroke', {
             stroke_id: stroke.id,
             board_id: currentBoardId.value
           });
@@ -436,8 +444,10 @@ function handleMouseUp(event) {
 
     if (!finalStroke) return;
 
-    // Tenta reconhecer a forma antes de finalizar
-    if (finalStroke.points.length > 4) { 
+    // Lógica de reconhecimento de formas
+    if (props.shapeRecognitionEnabled && finalStroke.points.length > 4) {
+        const finalStroke = { ...finalStroke };
+        
         // 1. Calcular um epsilon dinâmico com base no tamanho do traço
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         finalStroke.points.forEach(p => {
@@ -450,36 +460,40 @@ function handleMouseUp(event) {
         const height = maxY - minY;
         const diagonal = Math.sqrt(width*width + height*height);
         // Epsilon é 4% da diagonal, com um valor mínimo para não simplificar demais formas pequenas.
-        const epsilon = Math.max(2.5, diagonal * 0.04); 
-        console.log(`Dynamic epsilon: ${epsilon.toFixed(2)} (based on diagonal ${diagonal.toFixed(2)})`);
-
+        const epsilon = Math.max(2.5, diagonal * 0.04);
+        console.log(`Dynamic epsilon (Mouse): ${epsilon.toFixed(2)} (based on diagonal ${diagonal.toFixed(2)})`);
+        
         // 2. Simplificar o traço com RDP usando o epsilon dinâmico
         const simplifiedPoints = rdp(finalStroke.points, epsilon);
-        console.log(`Original points: ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
+        console.log(`Original points (Mouse): ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
 
-        // 3. Analisar a forma com base nos seus pontos simplificados
         const shape = analyzeShape(simplifiedPoints);
-
-        if (shape && shape.name !== 'unknown') {
-            console.log(`Shape recognized: ${shape.name} with confidence ${shape.confidence}`);
-            if (shape.confidence > 0.85) {
-                // Remove o traço desenhado
-                const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-                if (index !== -1) {
-                    strokes.value.splice(index, 1);
-                }
-                
-                // Cria a forma perfeita
-                createPerfectShape(shape.name, finalStroke, simplifiedPoints);
-        redraw();
-                currentTempStrokeId = null;
-                return;
-            }
+        if (shape.name !== 'unknown' && shape.confidence > 0.85) {
+            console.log(`Recognized as ${shape.name} (Mouse) with confidence ${shape.confidence.toFixed(2)}`);
+            createPerfectShape(shape.name, finalStroke, simplifiedPoints);
+            return; // Impede que o traço original seja enviado
         }
     }
 
-    // Se não for uma forma reconhecida, finaliza como um traço normal
-    finalizeStroke(finalStroke);
+    // Se o reconhecimento de formas não estiver ativo ou não for bem-sucedido, envia o traço normal.
+    if (finalStroke && finalStroke.points.length > 1) {
+        socket.emit('draw_stroke_event', {
+            board_id: currentBoardId.value,
+            user_email: userInfo.value?.email,
+            points: finalStroke.points,
+            color: finalStroke.color,
+            lineWidth: finalStroke.lineWidth,
+            temp_id: finalStroke.id,
+        });
+    } else {
+        // Se for apenas um clique, remove o traço temporário
+        const index = strokes.value.findIndex(s => s.id === finalStroke.id);
+        if (index !== -1) {
+            strokes.value.splice(index, 1);
+            redraw();
+        }
+    }
+
     currentTempStrokeId = null;
   }
   
@@ -523,13 +537,13 @@ function handleWheel(event) {
 }
 
 function showContextMenuAt(screenX, screenY) {
-  if (socket.value) socket.value.emit('debug_touch_event', { type: 'showContextMenuAt_Triggered', screenX, screenY, sid: socket.value.id });
+  if (socket) socket.emit('debug_touch_event', { type: 'showContextMenuAt_Triggered', screenX, screenY, sid: socket.id });
   
   if (currentTempStrokeId) {
     const index = strokes.value.indexOf(strokes.value.find(s => s.id === currentTempStrokeId));
     if (index > -1) {
       strokes.value.splice(index, 1);
-      if (socket.value) socket.value.emit('debug_touch_event', { type: 'showContextMenuAt_ClearedSpeculativeStroke', sid: socket.value.id });
+      if (socket) socket.emit('debug_touch_event', { type: 'showContextMenuAt_ClearedSpeculativeStroke', sid: socket.id });
     }
     currentTempStrokeId = null;
   }
@@ -642,7 +656,7 @@ function handleTouchMove(event) {
             if (index !== -1) {
               strokes.value.splice(index, 1);
               redraw();
-              socket.value.emit('erase_stroke', {
+              socket.emit('erase_stroke', {
                 stroke_id: stroke.id,
                 board_id: currentBoardId.value
               });
@@ -695,8 +709,10 @@ function handleTouchEnd(event) {
         return;
     }
 
-    // Tenta reconhecer a forma
-    if (finalStroke.points.length > 4) {
+    // Lógica de reconhecimento de formas
+    if (props.shapeRecognitionEnabled && finalStroke.points.length > 4) {
+        const finalStroke = { ...finalStroke };
+        
         // 1. Calcular um epsilon dinâmico com base no tamanho do traço
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         finalStroke.points.forEach(p => {
@@ -717,24 +733,30 @@ function handleTouchEnd(event) {
         console.log(`Original points (Touch): ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
 
         const shape = analyzeShape(simplifiedPoints);
-        
-        if (shape && shape.name !== 'unknown') {
-            console.log(`Shape recognized (Touch): ${shape.name} with confidence ${shape.confidence}`);
-            if (shape.confidence > 0.85) {
-                const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-                if (index !== -1) {
-        strokes.value.splice(index, 1);
-      }
-                createPerfectShape(shape.name, finalStroke, simplifiedPoints);
-      redraw(); 
-            } else {
-                finalizeStroke(finalStroke);
-            }
-        } else {
-            finalizeStroke(finalStroke);
+        if (shape.name !== 'unknown' && shape.confidence > 0.85) {
+            console.log(`Recognized as ${shape.name} (Touch) with confidence ${shape.confidence.toFixed(2)}`);
+            createPerfectShape(shape.name, finalStroke, simplifiedPoints);
+            return; // Impede que o traço original seja enviado
         }
+    }
+
+    // Se o reconhecimento de formas não estiver ativo ou não for bem-sucedido, envia o traço normal.
+    if (finalStroke && finalStroke.points.length > 1) {
+        socket.emit('draw_stroke_event', {
+            board_id: currentBoardId.value,
+            user_email: userInfo.value?.email,
+            points: finalStroke.points,
+            color: finalStroke.color,
+            lineWidth: finalStroke.lineWidth,
+            temp_id: finalStroke.id,
+        });
     } else {
-        finalizeStroke(finalStroke);
+        // Se for apenas um clique, remove o traço temporário
+        const index = strokes.value.findIndex(s => s.id === finalStroke.id);
+        if (index !== -1) {
+            strokes.value.splice(index, 1);
+            redraw();
+        }
     }
   }
   
@@ -757,8 +779,8 @@ function handleMenuSelection(action, value) {
     case 'clear':
       if (confirm('Tem certeza que deseja limpar o canvas para todos?')) {
         console.log(`FRONTEND: Enviando evento para limpar canvas da lousa ${currentBoardId.value}`);
-        if (socket.value) {
-          socket.value.emit('clear_canvas_event', { board_id: currentBoardId.value });
+        if (socket) {
+          socket.emit('clear_canvas_event', { board_id: currentBoardId.value });
         }
         strokes.value = [];
         redoStack.value = [];
@@ -785,27 +807,6 @@ function getDistance(p1, p2) {
 
 const setTool = (tool) => {
   currentTool.value = tool;
-};
-
-// Nova função para finalizar um traço (seja enviando para o servidor ou removendo se for um clique)
-const finalizeStroke = (stroke) => {
-  if (stroke.points.length > 1 && socket.value) {
-    socket.value.emit('draw_stroke_event', {
-      board_id: currentBoardId.value,
-      user_email: userInfo.value?.email,
-      points: stroke.points,
-      color: stroke.color,
-      lineWidth: stroke.lineWidth,
-      temp_id: stroke.id,
-    });
-  } else {
-    // Se for apenas um clique, remove o traço temporário
-    const index = strokes.value.findIndex(s => s.id === stroke.id);
-    if (index !== -1) {
-      strokes.value.splice(index, 1);
-      redraw();
-    }
-  }
 };
 
 // --- Funções para o Algoritmo Ramer-Douglas-Peucker (RDP) ---
@@ -954,7 +955,7 @@ const createPerfectShape = (shapeName, originalStroke, simplifiedPoints) => {
 
     strokes.value.push(perfectStroke);
 
-    socket.value.emit('draw_stroke_event', {
+    socket.emit('draw_stroke_event', {
         board_id: currentBoardId.value,
         user_email: userInfo.value?.email,
         points: perfectStroke.points,
