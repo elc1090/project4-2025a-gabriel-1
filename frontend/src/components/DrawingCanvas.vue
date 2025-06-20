@@ -463,7 +463,7 @@ function handleMouseUp(event) {
         // 3. Analisar a forma com base nos seus pontos simplificados
         const shape = analyzeShape(simplifiedPoints);
 
-        if (shape.name !== 'unknown' && shape.confidence > 0.85) {
+        if (shape.name !== 'unknown' && shape.confidence > 0.80) {
             console.log(`Recognized as ${shape.name} with confidence ${shape.confidence.toFixed(2)}`);
             // Remove o traço original desenhado
             const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
@@ -716,7 +716,7 @@ function handleTouchEnd(event) {
         console.log(`Original points (Touch): ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
 
         const shape = analyzeShape(simplifiedPoints);
-        if (shape.name !== 'unknown' && shape.confidence > 0.85) {
+        if (shape.name !== 'unknown' && shape.confidence > 0.80) {
             console.log(`Recognized as ${shape.name} (Touch) with confidence ${shape.confidence.toFixed(2)}`);
             // Remove o traço original
             const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
@@ -1049,10 +1049,15 @@ function analyzeShape(points) {
 
         // Retângulo: Deve ter 4 vértices.
         if (numVertices === 4) {
-            // Lógica mais estrita: exige 4 ângulos próximos de 90 graus para evitar trapézios.
-            const nearRightAngles = angles.filter(angle => angle > 80 && angle < 100).length;
+            // Faixa de ângulo um pouco mais permissiva.
+            const nearRightAngles = angles.filter(angle => angle > 78 && angle < 102).length;
+            
+            // Prioriza 4 ângulos retos, mas aceita 3, já que o usuário está no modo de formas.
             if (nearRightAngles === 4) {
                 return { name: 'rectangle', confidence: 0.95 };
+            }
+            if (nearRightAngles === 3) {
+                return { name: 'rectangle', confidence: 0.82 }; // Confiança menor, mas aceitável
             }
         }
 
