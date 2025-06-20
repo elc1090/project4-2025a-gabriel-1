@@ -105,6 +105,12 @@ const longPressMoveThreshold = 10;
 let isMultiTouching = false;
 let potentialDrawingStart = false;
 
+// Objeto reativo para armazenar informações do gesto de pinça/pan
+const initialGestureInfo = reactive({
+  pinchDistance: 0,
+  worldMidpoint: { x: 0, y: 0 },
+});
+
 const currentTool = ref('pencil');
 const eraserSize = 20; // Raio da borracha em pixels do mundo
 
@@ -544,8 +550,8 @@ function handleTouchStart(event) {
   menu.visible = false;
   const touches = event.touches;
   
-  if (touches.length === 1) {
-    isMultiTouching = false;
+  // Início de um gesto com um dedo
+  if (touches.length === 1 && !isMultiTouching) {
     potentialDrawingStart = true;
     const touch = touches[0];
     touchStartCoords = { x: touch.clientX, y: touch.clientY, time: Date.now() };
@@ -558,17 +564,19 @@ function handleTouchStart(event) {
       longPressTimer = null;
     }, longPressDuration);
   
+  // Início de um gesto com múltiplos dedos (ou transição de 1 para 2+)
   } else if (touches.length >= 2) {
     clearTimeout(longPressTimer);
     longPressTimer = null;
     potentialDrawingStart = false;
-    isDrawing = false;
     
-    if (currentTempStrokeId) {
+    // Se um desenho estava em progresso, aborte-o.
+    if (isDrawing) {
         const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
         if (index !== -1) strokes.value.splice(index, 1);
         currentTempStrokeId = null;
         redraw();
+        isDrawing = false;
     }
     
     isMultiTouching = true;
@@ -716,7 +724,7 @@ function handleTouchEnd(event) {
         console.log(`Original points (Touch): ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
 
         const shape = analyzeShape(simplifiedPoints);
-        if (shape.name !== 'unknown' && shape.confidence > 0.80) {
+        if (shape.name !== 'unknown' && shape.confidence > 0.80) { // Limiar reduzido de 0.85 para 0.80
             console.log(`Recognized as ${shape.name} (Touch) with confidence ${shape.confidence.toFixed(2)}`);
             // Remove o traço original
             const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
@@ -734,11 +742,15 @@ function handleTouchEnd(event) {
     finalizeStroke(finalStroke);
   }
   
-  // Limpa o estado para o próximo toque
-  isDrawing = false;
+  // Limpa o estado com base nos toques restantes para transições suaves
+  if (event.touches.length < 2) {
     isMultiTouching = false;
-  potentialDrawingStart = false;
-  currentTempStrokeId = null;
+  }
+  if (event.touches.length < 1) {
+    isDrawing = false;
+    potentialDrawingStart = false;
+    currentTempStrokeId = null;
+  }
 }
 
 function showContextMenu(event) {
@@ -1157,5 +1169,24 @@ function analyzeShape(points) {
   background-color: #f0f0f0;
   display: block;
   touch-action: none; /* Previne o scroll do navegador em touch screens */
+}
+
+@media (max-width: 768px) {
+  .sidebar-container {
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    flex-direction: row;
+    padding: 8px;
+    gap: 8px;
+    width: auto;
+  }
+
+  :deep(.menu-content) {
+    /* Reposiciona o menu para abrir para baixo, centralizado */
+    top: calc(100% + 12px);
+    left: 50%;
+    transform: translateX(-50%);
+  }
 }
 </style>
