@@ -438,11 +438,26 @@ function handleMouseUp(event) {
 
     // Tenta reconhecer a forma antes de finalizar
     if (finalStroke.points.length > 4) { 
-        // 1. Simplificar o traço com RDP para extrair os vértices principais
-        const simplifiedPoints = rdp(finalStroke.points, 2.0); // Epsilon ajustado (era 4.0)
+        // 1. Calcular um epsilon dinâmico com base no tamanho do traço
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        finalStroke.points.forEach(p => {
+            minX = Math.min(minX, p.x);
+            minY = Math.min(minY, p.y);
+            maxX = Math.max(maxX, p.x);
+            maxY = Math.max(maxY, p.y);
+        });
+        const width = maxX - minX;
+        const height = maxY - minY;
+        const diagonal = Math.sqrt(width*width + height*height);
+        // Epsilon é 4% da diagonal, com um valor mínimo para não simplificar demais formas pequenas.
+        const epsilon = Math.max(2.5, diagonal * 0.04); 
+        console.log(`Dynamic epsilon: ${epsilon.toFixed(2)} (based on diagonal ${diagonal.toFixed(2)})`);
+
+        // 2. Simplificar o traço com RDP usando o epsilon dinâmico
+        const simplifiedPoints = rdp(finalStroke.points, epsilon);
         console.log(`Original points: ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
 
-        // 2. Analisar a forma com base nos seus pontos simplificados
+        // 3. Analisar a forma com base nos seus pontos simplificados
         const shape = analyzeShape(simplifiedPoints);
 
         if (shape && shape.name !== 'unknown') {
@@ -682,7 +697,23 @@ function handleTouchEnd(event) {
 
     // Tenta reconhecer a forma
     if (finalStroke.points.length > 4) {
-        const simplifiedPoints = rdp(finalStroke.points, 2.0); // Epsilon ajustado (era 4.0)
+        // 1. Calcular um epsilon dinâmico com base no tamanho do traço
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        finalStroke.points.forEach(p => {
+            minX = Math.min(minX, p.x);
+            minY = Math.min(minY, p.y);
+            maxX = Math.max(maxX, p.x);
+            maxY = Math.max(maxY, p.y);
+        });
+        const width = maxX - minX;
+        const height = maxY - minY;
+        const diagonal = Math.sqrt(width*width + height*height);
+        // Epsilon é 4% da diagonal, com um valor mínimo para não simplificar demais formas pequenas.
+        const epsilon = Math.max(2.5, diagonal * 0.04);
+        console.log(`Dynamic epsilon (Touch): ${epsilon.toFixed(2)} (based on diagonal ${diagonal.toFixed(2)})`);
+        
+        // 2. Simplificar o traço com RDP usando o epsilon dinâmico
+        const simplifiedPoints = rdp(finalStroke.points, epsilon);
         console.log(`Original points (Touch): ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
 
         const shape = analyzeShape(simplifiedPoints);
@@ -1011,7 +1042,7 @@ function analyzeShape(points) {
         const circularity = (4 * Math.PI * area) / (pathLength * pathLength);
         
         console.log("Circularity score:", circularity);
-        if (circularity > 0.65) {
+        if (circularity > 0.7) {
             return { name: 'circle', confidence: circularity };
         }
     }
