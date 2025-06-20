@@ -180,21 +180,33 @@ const recognizer = new GestureRecognizer({ defaultStrokes: false });
 // --- Fim da Configuração do Reconhecedor ---
 
 onMounted(() => {
-  // Define os modelos de formas para o reconhecedor
-  const size = 250; // Tamanho padrão para os modelos
-  const shapeTemplates = {
-      circle: createPolygon(32, size/2, size/2, size/2),
-      rectangle: [
-          {x:0,y:0},{x:size,y:0},{x:size,y:size},{x:0,y:size},{x:0,y:0}
-      ],
-      triangle: createPolygon(3, size/2, size/2, size/2),
-      star: createStar(size/2, size/2, size/2, size/4)
+  // Define os modelos de formas para o reconhecedor, usando templates normalizados.
+  // Estes templates são mais robustos do que os gerados proceduralmente.
+  const templates = {
+    triangle: [
+      { x: 130, y: 16 }, { x: 26, y: 244 }, { x: 234, y: 244 }, { x: 130, y: 16 }
+    ],
+    rectangle: [
+      { x: 30, y: 30 }, { x: 220, y: 30 }, { x: 220, y: 220 }, { x: 30, y: 220 }, { x: 30, y: 30 }
+    ],
+    circle: [
+      { x: 182, y: 92 }, { x: 172, y: 115 }, { x: 156, y: 135 }, { x: 135, y: 156 }, { x: 115, y: 172 },
+      { x: 92, y: 182 }, { x: 68, y: 182 }, { x: 44, y: 172 }, { x: 25, y: 156 }, { x: 14, y: 135 },
+      { x: 14, y: 115 }, { x: 25, y: 92 }, { x: 44, y: 68 }, { x: 68, y: 44 }, { x: 92, y: 25 },
+      { x: 115, y: 14 }, { x: 135, y: 14 }, { x: 156, y: 25 }, { x: 172, y: 44 }, { x: 182, y: 68 },
+      { x: 182, y: 92 }
+    ],
+     star: [
+        {x: 125, y: 20}, {x: 155, y: 80}, {x: 220, y: 80}, {x: 170, y: 130}, 
+        {x: 190, y: 190}, {x: 125, y: 150}, {x: 60, y: 190}, {x: 80, y: 130}, 
+        {x: 30, y: 80}, {x: 100, y: 80}, {x: 125, y: 20}
+    ]
   };
-  
-  recognizer.add('circle', shapeTemplates.circle);
-  recognizer.add('rectangle', shapeTemplates.rectangle);
-  recognizer.add('triangle', shapeTemplates.triangle);
-  recognizer.add('star', shapeTemplates.star);
+
+  recognizer.add('triangle', templates.triangle);
+  recognizer.add('rectangle', templates.rectangle);
+  recognizer.add('circle', templates.circle);
+  recognizer.add('star', templates.star);
   
   setupViewportAndWorld();
   window.addEventListener('resize', setupViewportAndWorld);
@@ -460,21 +472,25 @@ function handleMouseUp(event) {
 
     // Tenta reconhecer a forma antes de finalizar
     if (finalStroke.points.length > 10) { 
-        console.log("Pontos enviados para reconhecimento:", JSON.stringify(finalStroke.points));
         const result = recognizer.recognize(finalStroke.points, true);
-        console.log('Shape Recognition Result:', JSON.stringify(result, null, 2));
-        if (result && result.score > 0.70) {
-            // Remove o traço desenhado
-            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-            if (index !== -1) {
-                strokes.value.splice(index, 1);
+
+        if (result && typeof result === 'object' && result.name && result.score) {
+            console.log(`Shape recognized: ${result.name} with score ${result.score}`);
+            if (result.score > 0.65) { // Limiar de confiança ajustado
+                // Remove o traço desenhado
+                const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
+                if (index !== -1) {
+                    strokes.value.splice(index, 1);
+                }
+                
+                // Cria a forma perfeita
+                createPerfectShape(result.name, finalStroke);
+                redraw();
+                currentTempStrokeId = null;
+                return; 
             }
-            
-            // Cria a forma perfeita
-            createPerfectShape(result.name, finalStroke);
-            redraw();
-            currentTempStrokeId = null;
-            return; // Importante para não executar o código abaixo
+        } else {
+             console.log('Recognition failed or result is not in the expected format. Received:', result);
         }
     }
 
@@ -697,17 +713,22 @@ function handleTouchEnd(event) {
 
     // Tenta reconhecer a forma
     if (finalStroke.points.length > 10) {
-        console.log("Pontos (touch) enviados para reconhecimento:", JSON.stringify(finalStroke.points));
         const result = recognizer.recognize(finalStroke.points, true);
-        console.log('Shape Recognition Result (Touch):', JSON.stringify(result, null, 2));
-        if (result && result.score > 0.70) {
-            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-            if (index !== -1) {
-                strokes.value.splice(index, 1);
+        
+        if (result && typeof result === 'object' && result.name && result.score) {
+            console.log(`Shape recognized (Touch): ${result.name} with score ${result.score}`);
+            if (result.score > 0.65) { // Limiar de confiança ajustado
+                const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
+                if (index !== -1) {
+                    strokes.value.splice(index, 1);
+                }
+                createPerfectShape(result.name, finalStroke);
+                redraw();
+            } else {
+                finalizeStroke(finalStroke);
             }
-            createPerfectShape(result.name, finalStroke);
-            redraw();
         } else {
+            console.log('Recognition failed or result is not in the expected format. Received:', result);
             finalizeStroke(finalStroke);
         }
     } else {
