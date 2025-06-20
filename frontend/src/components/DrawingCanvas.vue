@@ -49,8 +49,9 @@
 import { ref, reactive, onMounted, onUnmounted, computed } from 'vue';
 import ContextMenu from './ContextMenu.vue';
 import WhiteboardMenu from './WhiteboardMenu.vue';
-import { userInfo } from '../services/userInfo';
+import { useUserInfo } from '../services/userInfo';
 import { io } from 'socket.io-client';
+import GestureRecognizer from '@2players/dollar1-unistroke-recognizer';
 
 const props = defineProps({
   user: Object,
@@ -174,7 +175,58 @@ function handleBoardDeleted(deletedBoardId) {
   }
 }
 
+// --- Configuração do Reconhecedor de Formas ---
+const recognizer = new GestureRecognizer({ defaultStrokes: false });
+let shapeTemplates = {}; // Será preenchido em onMounted
+
+// Função para gerar pontos de um polígono regular (para triângulo, quadrado, estrela)
+const createPolygon = (sides, cx, cy, radius) => {
+    const points = [];
+    const angleStep = (Math.PI * 2) / sides;
+    for (let i = 0; i < sides; i++) {
+        // O -Math.PI / 2 é para rotacionar e deixar a base do triângulo/quadrado reta
+        points.push({
+            x: cx + radius * Math.cos(angleStep * i - Math.PI / 2),
+            y: cy + radius * Math.sin(angleStep * i - Math.PI / 2),
+        });
+    }
+    return points;
+};
+
+// Função para gerar pontos de uma estrela
+const createStar = (cx, cy, outerRadius, innerRadius) => {
+    const points = [];
+    const sides = 5;
+    const angleStep = Math.PI / sides;
+    for (let i = 0; i < 2 * sides; i++) {
+        const radius = i % 2 === 0 ? outerRadius : innerRadius;
+        points.push({
+            x: cx + radius * Math.cos(angleStep * i - Math.PI / 2),
+            y: cy + radius * Math.sin(angleStep * i - Math.PI / 2),
+        });
+    }
+    return points;
+}
+
+// --- Fim da Configuração do Reconhecedor ---
+
 onMounted(() => {
+  // Define os modelos de formas para o reconhecedor
+  const size = 250; // Tamanho padrão para os modelos
+  shapeTemplates = {
+      circle: createPolygon(32, size/2, size/2, size/2),
+      rectangle: [
+          {x:0,y:0},{x:size,y:0},{x:size,y:size},{x:0,y:size},{x:0,y:0}
+      ],
+      triangle: createPolygon(3, size/2, size/2, size/2),
+      star: createStar(size/2, size/2, size/2, size/4)
+  };
+  
+  recognizer.add('circle', shapeTemplates.circle);
+  recognizer.add('rectangle', shapeTemplates.rectangle);
+  recognizer.add('triangle', shapeTemplates.triangle);
+  recognizer.add('star', shapeTemplates.star);
+  
   setupViewportAndWorld();
   window.addEventListener('resize', setupViewportAndWorld);
   window.addEventListener('keydown', handleKeyDown);
@@ -434,6 +486,24 @@ function handleMouseUp(event) {
     isDrawing = false;
     const finalStroke = strokes.value.find(s => s.id === currentTempStrokeId);
 
+    // Tenta reconhecer a forma antes de finalizar
+    if (finalStroke && finalStroke.points.length > 10) { // Mínimo de pontos para reconhecer
+        const result = recognizer.recognize(finalStroke.points, true);
+        if (result && result.score > 0.7) { // Limiar de confiança
+            // Remove o traço desenhado
+            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
+            if (index !== -1) {
+                strokes.value.splice(index, 1);
+            }
+            
+            // Cria a forma perfeita
+            createPerfectShape(result.name, finalStroke);
+            redraw();
+            currentTempStrokeId = null; // Limpa para não enviar o traço original
+            return; // Interrompe a função aqui
+        }
+    }
+
     if (finalStroke && finalStroke.points.length > 1 && socket.value) {
       socket.value.emit('draw_stroke_event', {
         board_id: currentBoardId.value,
@@ -655,7 +725,26 @@ function handleTouchEnd(event) {
   clearTimeout(longPressTimer);
 
   if (isDrawing) {
+    // Finaliza o desenho, mesma lógica de handleMouseUp
     const finalStroke = strokes.value.find(s => s.id === currentTempStrokeId);
+    
+    // Tenta reconhecer a forma
+    if (finalStroke && finalStroke.points.length > 10) {
+        const result = recognizer.recognize(finalStroke.points, true);
+        if (result && result.score > 0.7) {
+            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
+            if (index !== -1) {
+                strokes.value.splice(index, 1);
+            }
+            createPerfectShape(result.name, finalStroke);
+            redraw();
+            isDrawing = false;
+            potentialDrawingStart = false;
+            currentTempStrokeId = null;
+            return;
+        }
+    }
+
     if (finalStroke && finalStroke.points.length > 1 && socket.value) {
       socket.value.emit('draw_stroke_event', {
         board_id: currentBoardId.value,
@@ -672,6 +761,7 @@ function handleTouchEnd(event) {
     }
   }
   
+  // Limpa o estado para o próximo toque
   isDrawing = false;
   isMultiTouching = false;
   potentialDrawingStart = false;
@@ -716,6 +806,68 @@ function getDistance(p1, p2) {
 
 const setTool = (tool) => {
   currentTool.value = tool;
+};
+
+// Função que cria e emite a forma perfeita
+const createPerfectShape = (shapeName, originalStroke) => {
+    // Encontra o centro e o tamanho (bounding box) do desenho original
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    originalStroke.points.forEach(p => {
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x);
+        maxY = Math.max(maxY, p.y);
+    });
+
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const width = maxX - minX;
+    const height = maxY - minY;
+    const radius = Math.max(width, height) / 2;
+
+    let perfectPoints = [];
+    switch (shapeName) {
+        case 'circle':
+            perfectPoints = createPolygon(32, cx, cy, radius); // Círculo com 32 lados
+            break;
+        case 'rectangle':
+            perfectPoints = [
+                { x: minX, y: minY }, { x: maxX, y: minY },
+                { x: maxX, y: maxY }, { x: minY, y: maxY },
+                { x: minX, y: minY } // Fecha o retângulo
+            ];
+            break;
+        case 'triangle':
+            perfectPoints = createPolygon(3, cx, cy, radius);
+            perfectPoints.push(perfectPoints[0]); // Fecha o triângulo
+            break;
+        case 'star':
+            perfectPoints = createStar(cx, cy, radius, radius / 2.5);
+            perfectPoints.push(perfectPoints[0]); // Fecha a estrela
+            break;
+    }
+
+    if (perfectPoints.length > 0) {
+        const newStrokeId = 'temp_' + Date.now();
+        const perfectStroke = {
+            id: newStrokeId,
+            user_id: userInfo.value.id,
+            points: perfectPoints,
+            color: originalStroke.color,
+            lineWidth: originalStroke.lineWidth,
+        };
+
+        strokes.value.push(perfectStroke);
+
+        socket.value.emit('draw_stroke_event', {
+            board_id: currentBoardId.value,
+            user_email: userInfo.value?.email,
+            points: perfectStroke.points,
+            color: perfectStroke.color,
+            lineWidth: perfectStroke.lineWidth,
+            temp_id: newStrokeId,
+        });
+    }
 };
 </script>
 
