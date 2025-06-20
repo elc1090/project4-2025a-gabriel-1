@@ -19,7 +19,7 @@ Funcionalidades principais incluem:
   - Ferramentas de desenho com seleção de cor (através de uma paleta) e espessura do pincel.  
   - Um menu de contexto customizado, ativado por clique direito no desktop ou toque longo em dispositivos móveis, oferecendo opções para limpar o desenho e resetar a visualização.
   - Persistência dos desenhos, que são salvos no banco de dados e recarregados quando um usuário acessa ou atualiza a página.
-  - Acesso aberto (sem necessidade de login).
+  - Acesso com login pelo Google e acesso como visitante.
 
 
 ### Desenvolvimento
