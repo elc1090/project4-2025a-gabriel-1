@@ -51,7 +51,8 @@ import ContextMenu from './ContextMenu.vue';
 import WhiteboardMenu from './WhiteboardMenu.vue';
 import { userInfo } from '../services/userInfo';
 import { io } from 'socket.io-client';
-import GestureRecognizer from '@2players/dollar1-unistroke-recognizer';
+import * as tf from '@tensorflow/tfjs';
+import * as mobilenet from '@tensorflow-models/mobilenet';
 
 const props = defineProps({
   user: Object,
@@ -175,58 +176,44 @@ function handleBoardDeleted(deletedBoardId) {
   }
 }
 
-// --- Configuração do Reconhecedor de Formas ---
-const recognizer = new GestureRecognizer({ defaultStrokes: false });
-let shapeTemplates = {}; // Será preenchido em onMounted
+// --- Configuração do Reconhecimento de IA ---
+let model = null;
+const isLoadingModel = ref(true);
 
-// Função para gerar pontos de um polígono regular (para triângulo, quadrado, estrela)
-const createPolygon = (sides, cx, cy, radius) => {
-    const points = [];
-    const angleStep = (Math.PI * 2) / sides;
-    for (let i = 0; i < sides; i++) {
-        // O -Math.PI / 2 é para rotacionar e deixar a base do triângulo/quadrado reta
-        points.push({
-            x: cx + radius * Math.cos(angleStep * i - Math.PI / 2),
-            y: cy + radius * Math.sin(angleStep * i - Math.PI / 2),
-        });
-    }
-    return points;
+const shapeClassMapping = {
+    'soccer ball': 'circle',
+    'basketball': 'circle',
+    'orange': 'circle',
+    'clock': 'circle',
+    'wall clock': 'circle',
+    'analog clock': 'circle',
+    'envelope': 'rectangle',
+    'monitor': 'rectangle',
+    'screen': 'rectangle',
+    'television': 'rectangle',
+    'picture frame': 'rectangle',
+    'mountain': 'triangle',
+    'volcano': 'triangle',
+    'pinwheel': 'star',
+    'starfish': 'star'
 };
-
-// Função para gerar pontos de uma estrela
-const createStar = (cx, cy, outerRadius, innerRadius) => {
-    const points = [];
-    const sides = 5;
-    const angleStep = Math.PI / sides;
-    for (let i = 0; i < 2 * sides; i++) {
-        const radius = i % 2 === 0 ? outerRadius : innerRadius;
-        points.push({
-            x: cx + radius * Math.cos(angleStep * i - Math.PI / 2),
-            y: cy + radius * Math.sin(angleStep * i - Math.PI / 2),
-        });
-    }
-    return points;
-}
-
-// --- Fim da Configuração do Reconhecedor ---
+// --- Fim da Configuração de IA ---
 
 onMounted(() => {
-  // Define os modelos de formas para o reconhecedor
-  const size = 250; // Tamanho padrão para os modelos
-  shapeTemplates = {
-      circle: createPolygon(32, size/2, size/2, size/2),
-      rectangle: [
-          {x:0,y:0},{x:size,y:0},{x:size,y:size},{x:0,y:size},{x:0,y:0}
-      ],
-      triangle: createPolygon(3, size/2, size/2, size/2),
-      star: createStar(size/2, size/2, size/2, size/4)
-  };
-  
-  recognizer.add('circle', shapeTemplates.circle);
-  recognizer.add('rectangle', shapeTemplates.rectangle);
-  recognizer.add('triangle', shapeTemplates.triangle);
-  recognizer.add('star', shapeTemplates.star);
-  
+  // Carrega o modelo de IA
+  async function loadModel() {
+    console.log("Carregando modelo MobileNet...");
+    try {
+      model = await mobilenet.load();
+      isLoadingModel.value = false;
+      console.log("Modelo carregado com sucesso.");
+    } catch (error) {
+      console.error("Falha ao carregar o modelo de IA:", error);
+      isLoadingModel.value = false;
+    }
+  }
+  loadModel();
+
   setupViewportAndWorld();
   window.addEventListener('resize', setupViewportAndWorld);
   window.addEventListener('keydown', handleKeyDown);
@@ -489,45 +476,12 @@ function handleMouseUp(event) {
 
     if (!finalStroke) return;
 
-    // Tenta reconhecer a forma antes de finalizar
-    if (finalStroke.points.length > 10) { 
-        const result = recognizer.recognize(finalStroke.points, true);
-        console.log('Shape Recognition Result:', result); // Log para depuração
-        if (result && result.score > 0.70) { // Limiar de confiança ajustado
-            // Remove o traço desenhado
-            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-            if (index !== -1) {
-                strokes.value.splice(index, 1);
-            }
-            
-            // Cria a forma perfeita
-            createPerfectShape(result.name, finalStroke);
-            redraw();
-            currentTempStrokeId = null;
-            return;
-        }
-    }
-
-    // Se não for uma forma reconhecida, finaliza como um traço normal
-    if (finalStroke.points.length > 1 && socket.value) {
-      socket.value.emit('draw_stroke_event', {
-        board_id: currentBoardId.value,
-        user_email: userInfo.value?.email,
-        points: finalStroke.points,
-        color: finalStroke.color,
-        lineWidth: finalStroke.lineWidth,
-        temp_id: finalStroke.id,
-      });
+    if (finalStroke.points.length > 10 && !isLoadingModel.value && model) {
+      recognizeAndReplaceShape(finalStroke);
     } else {
-      // Se for apenas um clique, remove o traço temporário
-      const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-      if (index !== -1) {
-          strokes.value.splice(index, 1);
-          redraw();
-      }
+      finalizeStroke(finalStroke);
     }
-    
-    currentTempStrokeId = null; // Limpa o ID temporário
+    currentTempStrokeId = null;
   }
   
   // Finaliza a ação da borracha
@@ -742,50 +696,10 @@ function handleTouchEnd(event) {
         return;
     }
 
-    // Tenta reconhecer a forma
-    if (finalStroke.points.length > 10) {
-        const result = recognizer.recognize(finalStroke.points, true);
-        console.log('Shape Recognition Result (Touch):', result); // Log para depuração
-        if (result && result.score > 0.70) { // Limiar de confiança ajustado
-            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-            if (index !== -1) {
-                strokes.value.splice(index, 1);
-            }
-            createPerfectShape(result.name, finalStroke);
-            redraw();
-        } else {
-            // Se não for forma, envia como traço normal
-            if (finalStroke.points.length > 1 && socket.value) {
-                socket.value.emit('draw_stroke_event', {
-                    board_id: currentBoardId.value,
-                    user_email: userInfo.value?.email,
-                    points: finalStroke.points,
-                    color: finalStroke.color,
-                    lineWidth: finalStroke.lineWidth,
-                    temp_id: finalStroke.id,
-                });
-            } else {
-                const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-                if (index !== -1) strokes.value.splice(index, 1);
-                redraw();
-            }
-        }
+    if (finalStroke.points.length > 10 && !isLoadingModel.value && model) {
+        recognizeAndReplaceShape(finalStroke);
     } else {
-        // Se não tiver pontos suficientes para reconhecimento, trata como traço normal
-        if (finalStroke.points.length > 1 && socket.value) {
-            socket.value.emit('draw_stroke_event', {
-                board_id: currentBoardId.value,
-                user_email: userInfo.value?.email,
-                points: finalStroke.points,
-                color: finalStroke.color,
-                lineWidth: finalStroke.lineWidth,
-                temp_id: finalStroke.id,
-            });
-        } else {
-            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-            if (index !== -1) strokes.value.splice(index, 1);
-            redraw();
-        }
+        finalizeStroke(finalStroke);
     }
   }
   
@@ -834,6 +748,101 @@ function getDistance(p1, p2) {
 
 const setTool = (tool) => {
   currentTool.value = tool;
+};
+
+// Nova função para finalizar um traço (seja enviando para o servidor ou removendo se for um clique)
+const finalizeStroke = (stroke) => {
+  if (stroke.points.length > 1 && socket.value) {
+    socket.value.emit('draw_stroke_event', {
+      board_id: currentBoardId.value,
+      user_email: userInfo.value?.email,
+      points: stroke.points,
+      color: stroke.color,
+      lineWidth: stroke.lineWidth,
+      temp_id: stroke.id,
+    });
+  } else {
+    // Se for apenas um clique, remove o traço temporário
+    const index = strokes.value.findIndex(s => s.id === stroke.id);
+    if (index !== -1) {
+      strokes.value.splice(index, 1);
+      redraw();
+    }
+  }
+};
+
+// Nova função de reconhecimento de IA
+const recognizeAndReplaceShape = async (stroke) => {
+  // 1. Encontrar o Bounding Box do traço
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  stroke.points.forEach(p => {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  });
+  
+  const padding = 20; // Espaçamento para garantir que o traço não seja cortado
+  const boxWidth = (maxX - minX) + padding * 2;
+  const boxHeight = (maxY - minY) + padding * 2;
+  
+  if (boxWidth < 20 || boxHeight < 20) {
+      finalizeStroke(stroke);
+      return;
+  }
+
+  // 2. Criar um canvas temporário e desenhar o traço nele
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = boxWidth;
+  tempCanvas.height = boxHeight;
+  const tempCtx = tempCanvas.getContext('2d');
+  
+  // Fundo branco para que o modelo veja o desenho corretamente
+  tempCtx.fillStyle = 'white';
+  tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+  
+  tempCtx.strokeStyle = stroke.color;
+  tempCtx.lineWidth = stroke.lineWidth;
+  tempCtx.lineCap = 'round';
+  tempCtx.lineJoin = 'round';
+  tempCtx.beginPath();
+  
+  // Desenha o traço transladado para o canto (0,0) do canvas temporário
+  tempCtx.moveTo(stroke.points[0].x - minX + padding, stroke.points[0].y - minY + padding);
+  stroke.points.forEach(p => {
+    tempCtx.lineTo(p.x - minX + padding, p.y - minY + padding);
+  });
+  tempCtx.stroke();
+  
+  // 3. Fazer a predição com o modelo
+  try {
+    const predictions = await model.classify(tempCanvas);
+    console.log('IA Predictions:', predictions);
+
+    // 4. Analisar os resultados
+    if (predictions && predictions.length > 0) {
+      const bestPrediction = predictions[0];
+      const mappedShape = shapeClassMapping[bestPrediction.className.toLowerCase()];
+      
+      // Limiar de confiança - pode ser ajustado
+      if (mappedShape && bestPrediction.probability > 0.3) {
+        console.log(`Forma reconhecida: ${mappedShape} (de ${bestPrediction.className}) com confiança ${bestPrediction.probability}`);
+        // Remove o traço original
+        const index = strokes.value.findIndex(s => s.id === stroke.id);
+        if (index !== -1) strokes.value.splice(index, 1);
+        
+        // Cria a forma perfeita
+        createPerfectShape(mappedShape, stroke);
+        redraw();
+        return;
+      }
+    }
+  } catch (error) {
+    console.error("Erro durante a classificação da imagem:", error);
+  }
+
+  // Se nada foi reconhecido ou a confiança foi baixa, finaliza como um traço normal.
+  finalizeStroke(stroke);
 };
 
 // Função que cria e emite a forma perfeita
@@ -897,6 +906,34 @@ const createPerfectShape = (shapeName, originalStroke) => {
         });
     }
 };
+
+// Funções auxiliares para criar formas geométricas (usadas por createPerfectShape)
+const createPolygon = (sides, cx, cy, radius) => {
+    const points = [];
+    const angleStep = (Math.PI * 2) / sides;
+    for (let i = 0; i < sides; i++) {
+        // O -Math.PI / 2 é para rotacionar e deixar a base do triângulo/quadrado reta
+        points.push({
+            x: cx + radius * Math.cos(angleStep * i - Math.PI / 2),
+            y: cy + radius * Math.sin(angleStep * i - Math.PI / 2),
+        });
+    }
+    return points;
+};
+
+const createStar = (cx, cy, outerRadius, innerRadius) => {
+    const points = [];
+    const sides = 5;
+    const angleStep = Math.PI / sides;
+    for (let i = 0; i < 2 * sides; i++) {
+        const radius = i % 2 === 0 ? outerRadius : innerRadius;
+        points.push({
+            x: cx + radius * Math.cos(angleStep * i - Math.PI / 2),
+            y: cy + radius * Math.sin(angleStep * i - Math.PI / 2),
+        });
+    }
+    return points;
+}
 </script>
 
 <style scoped>
