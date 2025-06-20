@@ -51,7 +51,6 @@ import ContextMenu from './ContextMenu.vue';
 import WhiteboardMenu from './WhiteboardMenu.vue';
 import { userInfo } from '../services/userInfo';
 import { io } from 'socket.io-client';
-import DollarRecognizer from '../services/dollarRecognizer.js';
 
 const props = defineProps({
   user: Object,
@@ -101,7 +100,6 @@ let touchStartCoords = {};
 const longPressMoveThreshold = 10;
 
 let isMultiTouching = false;
-let initialGestureInfo = {};
 let potentialDrawingStart = false;
 
 const currentTool = ref('pencil');
@@ -175,40 +173,7 @@ function handleBoardDeleted(deletedBoardId) {
   }
 }
 
-// --- Configuração do Reconhecedor de Formas ---
-const recognizer = new DollarRecognizer();
-// --- Fim da Configuração do Reconhecedor ---
-
 onMounted(() => {
-  // Define os modelos de formas para o reconhecedor.
-  // Estes são templates mais robustos e normalizados para melhorar a precisão.
-  const templates = {
-    line: [ {X:0,Y:0}, {X:250,Y:0} ], // Linha horizontal simples
-    rectangle: [ // Retângulo (não um quadrado)
-      {X:0, Y:0}, {X:200, Y:0}, {X:200, Y:150}, {X:0, Y:150}, {X:0, Y:0}
-    ],
-    circle: [ // Círculo mais bem definido
-      {X:125,Y:24.8},{X:154.9,Y:34.7},{X:181.1,Y:51.5},{X:202.1,Y:73.4},{X:216.3,Y:98.5},
-      {X:222.5,Y:125},{X:221,Y:151.5},{X:212.3,Y:176.6},{X:197.6,Y:198},{X:178,Y:214.3},
-      {X:155,Y:225.2},{X:125,Y:225.2},{X:95.1,Y:225.2},{X:72,Y:214.3},{X:52.4,Y:198},
-      {X:37.7,Y:176.6},{X:29,Y:151.5},{X:27.5,Y:125},{X:33.7,Y:98.5},{X:47.9,Y:73.4},
-      {X:68.9,Y:51.5},{X:95,Y:34.7},{X:125,Y:24.8}
-    ],
-    triangle: [ // Triângulo Isósceles
-        {X:125, Y:0}, {X:0, Y:216.5}, {X:250, Y:216.5}, {X:125, Y:0}
-    ],
-    star: [
-        {X:125,Y:0},{X:159.5,Y:82.6},{X:250,Y:95.1},{X:184.5,Y:154.9},{X:202.1,Y:250},
-        {X:125,Y:202.1},{X:47.9,Y:250},{X:65.5,Y:154.9},{X:0,Y:95.1},{X:90.5,Y:82.6},{X:125,Y:0}
-    ]
-  };
-
-  recognizer.AddUnistroke('line', templates.line.map(p => ({...p})));
-  recognizer.AddUnistroke('triangle', templates.triangle.map(p => ({...p})));
-  recognizer.AddUnistroke('rectangle', templates.rectangle.map(p => ({...p})));
-  recognizer.AddUnistroke('circle', templates.circle.map(p => ({...p})));
-  recognizer.AddUnistroke('star', templates.star.map(p => ({...p})));
-  
   setupViewportAndWorld();
   window.addEventListener('resize', setupViewportAndWorld);
   window.addEventListener('keydown', handleKeyDown);
@@ -471,32 +436,30 @@ function handleMouseUp(event) {
 
     if (!finalStroke) return;
 
-    // Tenta reconhecer a forma antes de finalizar
-    if (finalStroke.points.length > 10) { 
-        // 1. Simplificar o traço com RDP para remover ruído e manter apenas os vértices.
-        // Um epsilon maior simplifica mais a curva.
-        const simplifiedPoints = rdp(finalStroke.points, 8.0); 
+    // Tenta reconhecer a forma
+    if (finalStroke.points.length > 4) { 
+        // 1. Simplificar o traço com RDP para extrair os vértices principais
+        const simplifiedPoints = rdp(finalStroke.points, 2.5);
         console.log(`Original points: ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
 
-        // 2. Converter pontos para o formato {X, Y} que o nosso reconhecedor espera
-        const pointsForRecognition = simplifiedPoints.map(p => ({ X: p.x, Y: p.y }));
-        
-        // 3. Reconhecer a forma com base nos pontos simplificados
-        const result = recognizer.Recognize(pointsForRecognition, true); 
+        // 2. Analisar a forma com base nos seus pontos simplificados
+        const shape = analyzeShape(simplifiedPoints);
 
-        console.log(`Shape recognized: ${result.Name} with score ${result.Score}`);
-        if (result.Score > 0.85) { // Limiar de confiança mais alto
-            // Remove o traço desenhado
-            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-            if (index !== -1) {
-                strokes.value.splice(index, 1);
+        if (shape && shape.name !== 'unknown') {
+            console.log(`Shape recognized: ${shape.name} with confidence ${shape.confidence}`);
+            if (shape.confidence > 0.85) {
+                // Remove o traço desenhado
+                const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
+                if (index !== -1) {
+                    strokes.value.splice(index, 1);
+                }
+                
+                // Cria a forma perfeita
+                createPerfectShape(shape.name, finalStroke);
+                redraw();
+                currentTempStrokeId = null;
+                return;
             }
-            
-            // Cria a forma perfeita
-            createPerfectShape(result.Name, finalStroke);
-            redraw();
-            currentTempStrokeId = null;
-            return; 
         }
     }
 
@@ -718,23 +681,24 @@ function handleTouchEnd(event) {
     }
 
     // Tenta reconhecer a forma
-    if (finalStroke.points.length > 10) {
-        // 1. Simplificar o traço com RDP
-        const simplifiedPoints = rdp(finalStroke.points, 8.0);
+    if (finalStroke.points.length > 4) {
+        const simplifiedPoints = rdp(finalStroke.points, 2.5);
         console.log(`Original points (Touch): ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
 
-        // 2. Converter e Reconhecer
-        const pointsForRecognition = simplifiedPoints.map(p => ({ X: p.x, Y: p.y }));
-        const result = recognizer.Recognize(pointsForRecognition, true);
+        const shape = analyzeShape(simplifiedPoints);
         
-        console.log(`Shape recognized (Touch): ${result.Name} with score ${result.Score}`);
-        if (result.Score > 0.85) { // Limiar de confiança mais alto
-            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-            if (index !== -1) {
-                strokes.value.splice(index, 1);
+        if (shape && shape.name !== 'unknown') {
+            console.log(`Shape recognized (Touch): ${shape.name} with confidence ${shape.confidence}`);
+            if (shape.confidence > 0.85) {
+                const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
+                if (index !== -1) {
+                    strokes.value.splice(index, 1);
+                }
+                createPerfectShape(shape.name, finalStroke);
+                redraw();
+            } else {
+                finalizeStroke(finalStroke);
             }
-            createPerfectShape(result.Name, finalStroke);
-            redraw();
         } else {
             finalizeStroke(finalStroke);
         }
@@ -959,6 +923,76 @@ const createStar = (cx, cy, outerRadius, innerRadius) => {
     }
     points.push(points[0]); // Fecha a estrela
     return points;
+}
+
+function getAngle(p1, p2, p3) {
+    const a = getDistance(p2, p3);
+    const b = getDistance(p1, p2);
+    const c = getDistance(p1, p3);
+    // Lei dos cossenos
+    const angleRad = Math.acos((b * b + a * a - c * c) / (2 * b * a));
+    return angleRad * (180 / Math.PI); // Converte para graus
+}
+
+// O novo analisador de formas, baseado em características
+function analyzeShape(points) {
+    const numPoints = points.length;
+
+    // Se for uma linha (ou quase), RDP a terá simplificado para 2 pontos.
+    if (numPoints === 2) {
+        return { name: 'line', confidence: 1.0 };
+    }
+    
+    // Para polígonos, verifica se o traço é fechado
+    const start = points[0];
+    const end = points[numPoints - 1];
+    const distance = getDistance(start, end);
+    const isClosed = distance < 25; // Limiar para considerar o polígono fechado
+
+    if (isClosed && numPoints >= 3 && numPoints <= 6) {
+        let angles = [];
+        for (let i = 0; i < numPoints -1; i++) { // Ignora o ponto de fechamento
+             const p1 = points[(i - 1 + (numPoints - 1)) % (numPoints - 1)];
+             const p2 = points[i];
+             const p3 = points[(i + 1) % (numPoints - 1)];
+             angles.push(getAngle(p1, p2, p3));
+        }
+        
+        // Retângulo/Quadrado: 4 cantos com ~90 graus
+        if (angles.length >= 4 && angles.length <= 5) { // Permite alguma imprecisão no RDP
+            const rightAngles = angles.filter(angle => angle > 70 && angle < 110).length;
+            if (rightAngles >= 3) {
+                return { name: 'rectangle', confidence: 0.9 };
+            }
+        }
+
+        // Triângulo: 3 cantos
+        if (angles.length >= 3 && angles.length <= 4) {
+             const sharpAngles = angles.filter(angle => angle > 20 && angle < 150).length;
+             if (sharpAngles >= 2) { // Precisa de pelo menos 2 ângulos "razoáveis"
+                 return { name: 'triangle', confidence: 0.9 };
+             }
+        }
+    }
+    
+    // Círculo: Muitos pontos após RDP, e a largura/altura são semelhantes
+    if (isClosed && numPoints > 6) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        points.forEach(p => {
+            minX = Math.min(minX, p.x);
+            minY = Math.min(minY, p.y);
+            maxX = Math.max(maxX, p.x);
+            maxY = Math.max(maxY, p.y);
+        });
+        const width = maxX - minX;
+        const height = maxY - minY;
+        const aspectRatio = Math.min(width, height) / Math.max(width, height);
+        if (aspectRatio > 0.75) { // Se for "quase redondo"
+            return { name: 'circle', confidence: 0.9 };
+        }
+    }
+
+    return { name: 'unknown', confidence: 0 };
 }
 </script>
 
