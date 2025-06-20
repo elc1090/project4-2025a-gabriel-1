@@ -492,7 +492,8 @@ function handleMouseUp(event) {
     // Tenta reconhecer a forma antes de finalizar
     if (finalStroke.points.length > 10) { 
         const result = recognizer.recognize(finalStroke.points, true);
-        if (result && result.score > 0.75) { // Limiar de confiança um pouco maior
+        console.log('Shape Recognition Result:', result); // Log para depuração
+        if (result && result.score > 0.70) { // Limiar de confiança ajustado
             // Remove o traço desenhado
             const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
             if (index !== -1) {
@@ -744,7 +745,8 @@ function handleTouchEnd(event) {
     // Tenta reconhecer a forma
     if (finalStroke.points.length > 10) {
         const result = recognizer.recognize(finalStroke.points, true);
-        if (result && result.score > 0.75) {
+        console.log('Shape Recognition Result (Touch):', result); // Log para depuração
+        if (result && result.score > 0.70) { // Limiar de confiança ajustado
             const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
             if (index !== -1) {
                 strokes.value.splice(index, 1);
