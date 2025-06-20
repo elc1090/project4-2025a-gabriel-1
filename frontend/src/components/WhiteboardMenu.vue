@@ -1,9 +1,9 @@
 <template>
-  <button @click="toggleMenu" class="whiteboard-menu-button">
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-  </button>
-  <div v-if="isMenuOpen" class="menu-overlay" @click="closeMenu">
-    <div class="menu-content" @click.stop>
+  <div class="whiteboard-menu-wrapper">
+    <button @click="toggleMenu" class="whiteboard-menu-button">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+    </button>
+    <div v-if="isMenuOpen" class="menu-content" @click.stop>
       <div class="menu-header">
         <div class="user-info">
           <img :src="userInfo?.profile_pic" alt="Avatar" class="user-avatar">
@@ -19,7 +19,6 @@
             </div>
           </div>
         </div>
-        <button @click="closeMenu" class="close-btn">&times;</button>
       </div>
       <h3 class="boards-title">Minhas Lousas</h3>
       <ul>
@@ -44,7 +43,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { userInfo } from '../services/userInfo';
 
 const props = defineProps({
@@ -201,40 +200,48 @@ watch(userInfo, (newUserInfo) => {
   }
 }, { deep: true });
 
+watch(isMenuOpen, (isOpen) => {
+  if (isOpen) {
+    // Adiciona um listener para fechar o menu ao clicar fora
+    document.addEventListener('click', closeMenu, true);
+  } else {
+    // Remove o listener quando o menu for fechado
+    document.removeEventListener('click', closeMenu, true);
+  }
+});
+
+onUnmounted(() => {
+  // Garante a limpeza do listener se o componente for destruído
+  document.removeEventListener('click', closeMenu, true);
+});
+
 </script>
 
 <style scoped>
-/* A classe do botão é herdada do componente pai (DrawingCanvas) via :deep()
-   Não precisa de estilo aqui, a menos que seja algo específico. */
-.whiteboard-menu-button {
-  /* Estilos específicos podem ir aqui se necessário, mas a maior parte
-     vem da sidebar em DrawingCanvas.vue */
+.whiteboard-menu-wrapper {
+  position: relative; /* Necessário para posicionar o menu-content */
 }
 
-.menu-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0,0,0,0.3);
-  z-index: 110; /* Acima da sidebar */
-  display: flex;
-  justify-content: center;
-  align-items: center;
+.whiteboard-menu-button {
+  /* O estilo principal vem do pai (DrawingCanvas), o que está correto */
 }
 
 .menu-content {
-  position: relative; /* Mudou de absolute para relative */
+  position: absolute;
+  top: 0;
+  left: calc(100% + 12px); /* Posiciona ao lado do botão, com um espaçamento */
+  z-index: 120;
+
   background-color: #f8f9fa;
   border-radius: 12px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-  width: 320px; /* Um pouco maior para conforto */
+  width: 320px;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
   color: #202124;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow-y: auto; /* Adiciona scroll se o conteúdo for muito grande */
 }
 
 .menu-header {
@@ -243,19 +250,6 @@ watch(userInfo, (newUserInfo) => {
   align-items: center;
   padding: 12px 16px;
   border-bottom: 1px solid #e0e0e0;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 24px;
-  cursor: pointer;
-  padding: 0;
-  line-height: 1;
-  color: #5f6368;
-}
-.close-btn:hover {
-  color: #202124;
 }
 
 .user-info {
