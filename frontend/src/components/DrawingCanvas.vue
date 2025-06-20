@@ -1012,15 +1012,22 @@ function analyzeShape(points) {
              angles.push(getAngle(p1, p2, p3));
         }
         
-        // Retângulo/Quadrado: 4 ou 5 pontos (devido ao fechamento), 4 ângulos retos
-        if (numPoints >= 4 && numPoints <= 5) {
-            const rightAngles = angles.filter(angle => angle > 65 && angle < 115).length;
-            if (rightAngles >= 3) {
-                return { name: 'rectangle', confidence: 0.9 };
+        // Retângulo/Quadrado: 4 a 6 pontos (dando margem para cantos imperfeitos)
+        if (numPoints >= 4 && numPoints <= 6) {
+            // Procura por ângulos "quase retos" para identificar a intenção de um retângulo.
+            const nearRightAngles = angles.filter(angle => angle > 75 && angle < 105).length;
+
+            // Um retângulo/quadrado deve ter pelo menos 3 ângulos quase retos.
+            if (nearRightAngles >= 3) {
+                // Aumenta a confiança se a proporção for próxima a de um quadrado
+                const { width, height } = getBoundingBox(points);
+                const aspectRatio = Math.min(width, height) / Math.max(width, height);
+                const confidence = aspectRatio > 0.80 ? 0.95 : 0.90;
+                return { name: 'rectangle', confidence };
             }
         }
 
-        // Triângulo: 3 ou 4 pontos (devido ao fechamento), 3 ângulos
+        // Triângulo: 3 ou 4 pontos (devido ao fechamento)
         if (numPoints >= 3 && numPoints <= 4) {
              const sharpAngles = angles.filter(angle => angle > 30 && angle < 140).length;
              if (sharpAngles >= 2) {
@@ -1041,7 +1048,9 @@ function analyzeShape(points) {
         const circularity = (4 * Math.PI * area) / (pathLength * pathLength);
         
         console.log("Circularity score:", circularity);
-        if (circularity > 0.7) {
+        // Limiar aumentado. Um quadrado perfeito tem circularidade ~0.785.
+        // Isso evita que quadrados sejam classificados como círculos.
+        if (circularity > 0.80) {
             return { name: 'circle', confidence: circularity };
         }
     }
