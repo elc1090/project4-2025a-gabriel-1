@@ -473,9 +473,15 @@ function handleMouseUp(event) {
 
     // Tenta reconhecer a forma antes de finalizar
     if (finalStroke.points.length > 10) { 
-        // Converter pontos para o formato {X, Y} que o nosso reconhecedor espera
-        const pointsForRecognition = finalStroke.points.map(p => ({ X: p.x, Y: p.y }));
-        const result = recognizer.Recognize(pointsForRecognition, true); // Usar protractor (melhor para ângulos)
+        // 1. Simplificar o traço com RDP para remover ruído e manter apenas os vértices.
+        const simplifiedPoints = rdp(finalStroke.points, 2.0);
+        console.log(`Original points: ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
+
+        // 2. Converter pontos para o formato {X, Y} que o nosso reconhecedor espera
+        const pointsForRecognition = simplifiedPoints.map(p => ({ X: p.x, Y: p.y }));
+        
+        // 3. Reconhecer a forma com base nos pontos simplificados
+        const result = recognizer.Recognize(pointsForRecognition, true); 
 
         console.log(`Shape recognized: ${result.Name} with score ${result.Score}`);
         if (result.Score > 0.85) { // Limiar de confiança mais alto
@@ -712,11 +718,16 @@ function handleTouchEnd(event) {
 
     // Tenta reconhecer a forma
     if (finalStroke.points.length > 10) {
-        const pointsForRecognition = finalStroke.points.map(p => ({ X: p.x, Y: p.y }));
+        // 1. Simplificar o traço com RDP
+        const simplifiedPoints = rdp(finalStroke.points, 2.0);
+        console.log(`Original points (Touch): ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
+
+        // 2. Converter e Reconhecer
+        const pointsForRecognition = simplifiedPoints.map(p => ({ X: p.x, Y: p.y }));
         const result = recognizer.Recognize(pointsForRecognition, true);
         
         console.log(`Shape recognized (Touch): ${result.Name} with score ${result.Score}`);
-        if (result.Score > 0.85) {
+        if (result.Score > 0.85) { // Limiar de confiança mais alto
             const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
             if (index !== -1) {
                 strokes.value.splice(index, 1);
@@ -798,6 +809,61 @@ const finalizeStroke = (stroke) => {
     }
   }
 };
+
+// --- Funções para o Algoritmo Ramer-Douglas-Peucker (RDP) ---
+
+// Calcula a distância perpendicular de um ponto a uma linha.
+function perpendicularDistance(pt, lineStart, lineEnd) {
+    let dx = lineEnd.x - lineStart.x;
+    let dy = lineEnd.y - lineStart.y;
+
+    if (dx === 0 && dy === 0) { // lineStart e lineEnd são o mesmo ponto
+        dx = pt.x - lineStart.x;
+        dy = pt.y - lineStart.y;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    const t = ((pt.x - lineStart.x) * dx + (pt.y - lineStart.y) * dy) / (dx * dx + dy * dy);
+    
+    let closestPoint;
+    if (t < 0) {
+        closestPoint = lineStart;
+    } else if (t > 1) {
+        closestPoint = lineEnd;
+    } else {
+        closestPoint = { x: lineStart.x + t * dx, y: lineStart.y + t * dy };
+    }
+
+    dx = pt.x - closestPoint.x;
+    dy = pt.y - closestPoint.y;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+// Simplifica um caminho usando o algoritmo RDP.
+function rdp(points, epsilon) {
+    if (points.length < 3) {
+        return points;
+    }
+    let dmax = 0;
+    let index = 0;
+    const end = points.length - 1;
+
+    for (let i = 1; i < end; i++) {
+        const d = perpendicularDistance(points[i], points[0], points[end]);
+        if (d > dmax) {
+            index = i;
+            dmax = d;
+        }
+    }
+
+    if (dmax > epsilon) {
+        const recResults1 = rdp(points.slice(0, index + 1), epsilon);
+        const recResults2 = rdp(points.slice(index, end + 1), epsilon);
+        return recResults1.slice(0, recResults1.length - 1).concat(recResults2);
+    } else {
+        return [points[0], points[end]];
+    }
+}
 
 // Função que cria e emite a forma perfeita
 const createPerfectShape = (shapeName, originalStroke) => {
