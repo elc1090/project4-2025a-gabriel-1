@@ -545,20 +545,24 @@ function handleMouseOut(event) {
 function handleWheel(event) {
   event.preventDefault();
   menu.visible = false;
+  
   const scaleAmountFactor = 1.1;
-  const mouseX_view = event.offsetX;
-  const mouseY_view = event.offsetY;
-  const worldP_before = screenToWorldCoordinates(mouseX_view, mouseY_view);
-  let newScale = viewportState.scale;
+  const { x: mouseX, y: mouseY } = getCanvasCoordinates(event);
+  const worldP_before = screenToWorldCoordinates(mouseX, mouseY);
+  
+  let newScale;
   if (event.deltaY < 0) {
-    newScale *= scaleAmountFactor;
+    newScale = viewportState.scale * scaleAmountFactor;
   } else {
-    newScale /= scaleAmountFactor;
+    newScale = viewportState.scale / scaleAmountFactor;
   }
-  newScale = Math.max(0.05, Math.min(newScale, 20));
+  newScale = Math.max(0.1, Math.min(newScale, 20));
+
+  const scaleChange = newScale - viewportState.scale;
+  viewportState.offsetX -= worldP_before.x * scaleChange;
+  viewportState.offsetY -= worldP_before.y * scaleChange;
   viewportState.scale = newScale;
-  viewportState.offsetX = mouseX_view - worldP_before.x * viewportState.scale;
-  viewportState.offsetY = mouseY_view - worldP_before.y * viewportState.scale;
+
   redraw();
 }
 
@@ -578,6 +582,14 @@ function showContextMenuAt(screenX, screenY) {
   menu.x = screenX;
   menu.y = screenY;
   menu.visible = true;
+}
+
+function getTouchCoordinates(touch) {
+  const rect = viewportCanvasRef.value.getBoundingClientRect();
+  return {
+    x: touch.clientX - rect.left,
+    y: touch.clientY - rect.top,
+  };
 }
 
 function handleTouchStart(event) {
@@ -608,7 +620,7 @@ function handleTouchStart(event) {
         if (index !== -1) strokes.value.splice(index, 1);
         currentTempStrokeId = null;
         redraw();
-    isDrawing = false; 
+        isDrawing = false; 
     }
 
     isMultiTouching = true;
@@ -616,9 +628,7 @@ function handleTouchStart(event) {
     const t2 = touches[1];
     initialGestureInfo.pinchDistance = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
     
-    const rect = viewportCanvasRef.value.getBoundingClientRect();
-    const screenMidX = (t1.clientX - rect.left + t2.clientX - rect.left) / 2;
-    const screenMidY = (t1.clientY - rect.top + t2.clientY - rect.top) / 2;
+    const { x: screenMidX, y: screenMidY } = getTouchMidpoint(t1, t2);
     
     initialGestureInfo.worldMidpoint = screenToWorldCoordinates(screenMidX, screenMidY);
   }
@@ -632,8 +642,10 @@ function handleTouchMove(event) {
     const touch = touches[0];
 
     if (potentialDrawingStart) {
-      const deltaX = touch.clientX - touchStartCoords.x;
-      const deltaY = touch.clientY - touchStartCoords.y;
+      const { x: screenX, y: screenY } = getTouchCoordinates(touch);
+      const touchStartScreen = getTouchCoordinates(touchStartCoords);
+      const deltaX = screenX - touchStartScreen.x;
+      const deltaY = screenY - touchStartScreen.y;
 
       if (Math.hypot(deltaX, deltaY) > longPressMoveThreshold) {
           clearTimeout(longPressTimer);
@@ -644,14 +656,16 @@ function handleTouchMove(event) {
            potentialDrawingStart = false;
            
            redoStack.value = [];
-           const { x, y } = getCanvasCoordinates(touch);
+
+           const worldCoords = screenToWorldCoordinates(screenX, screenY);
+           
            currentTempStrokeId = 'temp_' + Date.now();
            const newStroke = {
                 id: currentTempStrokeId,
                 user_id: userInfo.value.id,
-                points: [{ x, y }],
-            color: drawingSettings.color,
-            lineWidth: drawingSettings.lineWidth,
+                points: [{ x: worldCoords.x, y: worldCoords.y }],
+                color: drawingSettings.color,
+                lineWidth: drawingSettings.lineWidth,
                 is_temp: true,
             };
             strokes.value.push(newStroke);
@@ -664,25 +678,27 @@ function handleTouchMove(event) {
       if (currentTool.value === 'pencil' || currentTool.value === 'shapes') {
         const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
         if (activeStroke) {
-          const { x, y } = getCanvasCoordinates(touch);
-          activeStroke.points.push({ x, y });
+          const { x: screenX, y: screenY } = getTouchCoordinates(touch);
+          const worldCoords = screenToWorldCoordinates(screenX, screenY);
+          activeStroke.points.push({ x: worldCoords.x, y: worldCoords.y });
           redraw();
         }
       } else if (currentTool.value === 'eraser') {
-        const { x: cursorX, y: cursorY } = getCanvasCoordinates(touch);
+        const { x: screenX, y: screenY } = getTouchCoordinates(touch);
+        const worldCoords = screenToWorldCoordinates(screenX, screenY);
         [...strokes.value].forEach(stroke => {
           if (stroke.is_temp) return;
           const isHit = stroke.points.some(point => {
-            const distance = Math.hypot(point.x - cursorX, point.y - cursorY);
+            const distance = Math.hypot(point.x - worldCoords.x, point.y - worldCoords.y);
             return distance < eraserSize;
           });
           if (isHit) {
             const index = strokes.value.findIndex(s => s.id === stroke.id);
             if (index !== -1) {
-              strokes.value.splice(index, 1);
-      redraw();
+              const removed = strokes.value.splice(index, 1);
+              redraw();
               socket.value.emit('erase_stroke', {
-                stroke_id: stroke.id,
+                stroke_id: removed[0].id,
                 board_id: currentBoardId.value
               });
             }
@@ -694,27 +710,30 @@ function handleTouchMove(event) {
     const t1 = touches[0];
     const t2 = touches[1];
     
-    const rect = viewportCanvasRef.value.getBoundingClientRect();
-    const currentScreenMidX = (t1.clientX - rect.left + t2.clientX - rect.left) / 2;
-    const currentScreenMidY = (t1.clientY - rect.top + t2.clientY - rect.top) / 2;
-    
-    viewportState.offsetX = currentScreenMidX - initialGestureInfo.worldMidpoint.x * viewportState.scale;
-    viewportState.offsetY = currentScreenMidY - initialGestureInfo.worldMidpoint.y * viewportState.scale;
+    // Pan
+    const { x: currentScreenMidX, y: currentScreenMidY } = getTouchMidpoint(t1, t2);
+    const panDx = currentScreenMidX - initialGestureInfo.worldMidpoint.screenX;
+    const panDy = currentScreenMidY - initialGestureInfo.worldMidpoint.screenY;
+    viewportState.offsetX -= panDx / viewportState.scale;
+    viewportState.offsetY -= panDy / viewportState.scale;
 
+    // Zoom
     const currentPinchDistance = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-    let scaleFactor = 1;
-    if (initialGestureInfo.pinchDistance > 0) {
-      scaleFactor = currentPinchDistance / initialGestureInfo.pinchDistance;
-    }
-    let newScale = viewportState.scale * scaleFactor;
-    newScale = Math.max(0.1, Math.min(newScale, 20));
-    
-    viewportState.offsetX += (initialGestureInfo.worldMidpoint.x * viewportState.scale) - (initialGestureInfo.worldMidpoint.x * newScale);
-    viewportState.offsetY += (initialGestureInfo.worldMidpoint.y * viewportState.scale) - (initialGestureInfo.worldMidpoint.y * newScale);
+    const scaleFactor = currentPinchDistance / initialGestureInfo.pinchDistance;
+    const newScale = viewportState.scale * scaleFactor;
+
+    const scaleChange = newScale - viewportState.scale;
+    viewportState.offsetX -= initialGestureInfo.worldMidpoint.x * scaleChange;
+    viewportState.offsetY -= initialGestureInfo.worldMidpoint.y * scaleChange;
     viewportState.scale = newScale;
 
+    // Update for next move event
     initialGestureInfo.pinchDistance = currentPinchDistance;
-    initialGestureInfo.worldMidpoint = screenToWorldCoordinates(currentScreenMidX, currentScreenMidY);
+    initialGestureInfo.worldMidpoint = { 
+      ...screenToWorldCoordinates(currentScreenMidX, currentScreenMidY),
+      screenX: currentScreenMidX,
+      screenY: currentScreenMidY
+    };
 
     redraw();
   }
@@ -776,6 +795,7 @@ function handleTouchEnd(event) {
     potentialDrawingStart = false;
     currentTempStrokeId = null;
   }
+  menu.visible = true;
 }
 
 function showContextMenu(event) {
@@ -1188,6 +1208,13 @@ function startDrawing(worldX, worldY) {
   if (isDrawing) return;
   isDrawing = true;
   // ... existing code ...
+}
+
+function getTouchMidpoint(t1, t2) {
+  const rect = viewportCanvasRef.value.getBoundingClientRect();
+  const screenMidX = (t1.clientX - rect.left + t2.clientX - rect.left) / 2;
+  const screenMidY = (t1.clientY - rect.top + t2.clientY - rect.top) / 2;
+  return { x: screenMidX, y: screenMidY };
 }
 </script>
 
