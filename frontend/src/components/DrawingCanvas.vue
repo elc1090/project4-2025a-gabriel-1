@@ -544,13 +544,11 @@ function handleMouseUp(event) {
 
         if (shape.name !== 'unknown' && shape.confidence > 0.80) {
             console.log(`Recognized as ${shape.name} with confidence ${shape.confidence.toFixed(2)}`);
-            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-            if (index !== -1) {
-                strokes.value.splice(index, 1);
+            const perfectPoints = generatePerfectShapePoints(shape.name, finalStroke, simplifiedPoints);
+            if (perfectPoints.length > 0) {
+              finalStroke.points = perfectPoints;
+              redraw();
             }
-            createPerfectShape(shape.name, finalStroke, simplifiedPoints);
-            currentTempStrokeId = null;
-            return;
         }
     }
 
@@ -814,14 +812,10 @@ function handleTouchEnd(event) {
         const shape = analyzeShape(simplifiedPoints);
         if (shape.name !== 'unknown' && shape.confidence > 0.80) {
             console.log(`Recognized as ${shape.name} (Touch) with confidence ${shape.confidence.toFixed(2)}`);
-            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-            if (index !== -1) {
-        strokes.value.splice(index, 1);
-      }
-            createPerfectShape(shape.name, finalStroke, simplifiedPoints);
-            isDrawing = false;
-            currentTempStrokeId = null;
-            return;
+            const perfectPoints = generatePerfectShapePoints(shape.name, finalStroke, simplifiedPoints);
+            if (perfectPoints.length > 0) {
+              finalStroke.points = perfectPoints;
+            }
         }
     }
     
@@ -972,24 +966,21 @@ function getBoundingBox(points) {
     return { cx, cy, width, height };
 }
 
-// Função que cria e emite a forma perfeita
-const createPerfectShape = (shapeName, originalStroke, simplifiedPoints) => {
+// Renamed from createPerfectShape, this function now only returns the points.
+function generatePerfectShapePoints(shapeName, originalStroke, simplifiedPoints) {
     let perfectPoints = [];
     switch (shapeName) {
         case 'line':
-            // CORRETO: Usa o ponto inicial e final reais do traço do usuário.
             perfectPoints = [ 
                 { x: originalStroke.points[0].x, y: originalStroke.points[0].y },
                 { x: originalStroke.points[originalStroke.points.length - 1].x, y: originalStroke.points[originalStroke.points.length - 1].y }
             ];
       break;
         case 'circle':
-            // CORRETO: Usa o bounding box para criar um círculo inscrito.
             const { cx, cy, width, height } = getBoundingBox(originalStroke.points);
             perfectPoints = createPolygon(32, cx, cy, Math.min(width, height) / 2);
             break;
         case 'rectangle':
-            // NOVO: Regulariza os vértices para criar um retângulo perfeito, mas rotacionado.
             const vertices = simplifiedPoints.slice(0, 4); // Pega os 4 vértices principais
 
             if (vertices.length === 4) {
@@ -1028,33 +1019,12 @@ const createPerfectShape = (shapeName, originalStroke, simplifiedPoints) => {
             }
             break;
         case 'triangle':
-            // Usa os 3 vértices simplificados para preservar a rotação/forma.
             const triVertices = simplifiedPoints.slice(0, 3);
             perfectPoints = [...triVertices, triVertices[0]]; // Fecha a forma
             break;
     }
 
-    if (perfectPoints.length === 0) return;
-
-    const newStrokeId = 'temp_' + Date.now();
-    const perfectStroke = {
-        id: newStrokeId,
-        user_id: userInfo.value.id,
-        points: perfectPoints,
-        color: originalStroke.color,
-        lineWidth: originalStroke.lineWidth,
-    };
-
-    strokes.value.push(perfectStroke);
-
-    socket.value.emit('draw_stroke_event', {
-        board_id: currentBoardId.value,
-        user_email: userInfo.value?.email,
-        points: perfectStroke.points,
-        color: perfectStroke.color,
-        lineWidth: perfectStroke.lineWidth,
-        temp_id: newStrokeId,
-    });
+    return perfectPoints;
 };
 
 // Funções auxiliares para criar formas geométricas (usadas por createPerfectShape)
