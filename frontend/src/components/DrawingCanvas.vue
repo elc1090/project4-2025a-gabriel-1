@@ -332,8 +332,9 @@ function resetView() {
   const scaleX = viewportState.width / WORLD_WIDTH;
   const scaleY = viewportState.height / WORLD_HEIGHT;
   viewportState.scale = Math.min(scaleX, scaleY) * 0.9;
-  viewportState.offsetX = (viewportState.width - WORLD_WIDTH * viewportState.scale) / 2;
-  viewportState.offsetY = (viewportState.height - WORLD_HEIGHT * viewportState.scale) / 2;
+
+  viewportState.offsetX = (WORLD_WIDTH / 2) - (viewportState.width / viewportState.scale / 2);
+  viewportState.offsetY = (WORLD_HEIGHT / 2) - (viewportState.height / viewportState.scale / 2);
   redraw();
 }
 
@@ -373,8 +374,8 @@ function drawStroke(stroke) {
 
 function screenToWorldCoordinates(screenX, screenY) {
   return {
-    x: (screenX - viewportState.offsetX) / viewportState.scale,
-    y: (screenY - viewportState.offsetY) / viewportState.scale,
+    x: (screenX / viewportState.scale) + viewportState.offsetX,
+    y: (screenY / viewportState.scale) + viewportState.offsetY,
   };
 }
 
@@ -394,14 +395,15 @@ function handleMouseDown(event) {
     
     redoStack.value = [];
 
-    const { x, y } = getCanvasCoordinates(event);
+    const { x: screenX, y: screenY } = getCanvasCoordinates(event);
+    const worldCoords = screenToWorldCoordinates(screenX, screenY);
     
     currentTempStrokeId = 'temp_' + Date.now();
 
     const newStroke = {
       id: currentTempStrokeId,
       user_id: userInfo.value.id,
-      points: [{ x, y }],
+      points: [{ x: worldCoords.x, y: worldCoords.y }],
       color: drawingSettings.color,
       lineWidth: drawingSettings.lineWidth,
       is_temp: true,
