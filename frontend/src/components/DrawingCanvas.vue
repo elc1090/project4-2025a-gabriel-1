@@ -635,6 +635,19 @@ function handleTouchMove(event) {
 
   if (touches.length === 1 && !isMultiTouching) {
     const touch = touches[0];
+    const screenPoint = getCanvasCoordinates(touch);
+    const worldPoint = screenToWorldCoordinates(screenPoint.x, screenPoint.y);
+
+    // Emit cursor position throttled
+    const now = Date.now();
+    if (socket.value && socket.value.connected && now - lastEmitTime > emitInterval) {
+      socket.value.emit('cursor_move', {
+        board_id: currentBoardId.value,
+        user_email: userInfo.value.email,
+        position: worldPoint
+      });
+      lastEmitTime = now;
+    }
 
     if (potentialDrawingStart) {
       const deltaX = touch.clientX - touchStartCoords.x;
@@ -649,9 +662,6 @@ function handleTouchMove(event) {
            potentialDrawingStart = false;
            
            redoStack.value = [];
-           const screenPoint = getCanvasCoordinates(touch);
-           const worldPoint = screenToWorldCoordinates(screenPoint.x, screenPoint.y);
-           
            currentTempStrokeId = 'temp_' + Date.now();
            const newStroke = {
                 id: currentTempStrokeId,
@@ -671,15 +681,10 @@ function handleTouchMove(event) {
       if (currentTool.value === 'pencil' || currentTool.value === 'shapes') {
         const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
         if (activeStroke) {
-          const screenPoint = getCanvasCoordinates(touch);
-          const worldPoint = screenToWorldCoordinates(screenPoint.x, screenPoint.y);
           activeStroke.points.push(worldPoint);
           redraw();
         }
       } else if (currentTool.value === 'eraser') {
-        const screenPoint = getCanvasCoordinates(touch);
-        const worldPoint = screenToWorldCoordinates(screenPoint.x, screenPoint.y);
-        
         [...strokes.value].forEach(stroke => {
           if (stroke.is_temp) return;
           const isHit = stroke.points.some(point => {
@@ -704,20 +709,16 @@ function handleTouchMove(event) {
     const t1 = touches[0];
     const t2 = touches[1];
     
-    const rect = viewportCanvasRef.value.getBoundingClientRect();
-    const currentScreenMidX = (t1.clientX - rect.left + t2.clientX - rect.left) / 2;
-    const currentScreenMidY = (t1.clientY - rect.top + t2.clientY - rect.top) / 2;
-    
-    viewportState.offsetX = currentScreenMidX - initialGestureInfo.worldMidpoint.x * viewportState.scale;
-    viewportState.offsetY = currentScreenMidY - initialGestureInfo.worldMidpoint.y * viewportState.scale;
-
     const currentPinchDistance = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
     let scaleFactor = 1;
     if (initialGestureInfo.pinchDistance > 0) {
-      scaleFactor = currentPinchDistance / initialGestureInfo.pinchDistance;
+        scaleFactor = currentPinchDistance / initialGestureInfo.pinchDistance;
     }
     const newScale = Math.max(0.1, Math.min(viewportState.scale * scaleFactor, 20));
 
+    const rect = viewportCanvasRef.value.getBoundingClientRect();
+    const currentScreenMidX = (t1.clientX - rect.left + t2.clientX - rect.left) / 2;
+    const currentScreenMidY = (t1.clientY - rect.top + t2.clientY - rect.top) / 2;
     const worldMidpointAfterZoom = {
         x: currentScreenMidX / newScale + viewportState.offsetX,
         y: currentScreenMidY / newScale + viewportState.offsetY
