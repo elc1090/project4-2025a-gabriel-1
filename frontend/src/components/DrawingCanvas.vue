@@ -1266,7 +1266,7 @@ function startDrawing(worldX, worldY) {
 
 .viewport-canvas {
   border: 1px solid #505050;
-  background-color: #f0f0f0;
+  background-color:rgb(255, 255, 255);
   display: block;
   touch-action: none; /* Previne o scroll do navegador em touch screens */
 }
