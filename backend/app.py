@@ -260,23 +260,48 @@ def handle_draw_stroke_event(data):
         db.session.add(new_stroke)
         db.session.commit()
 
-        stroke_data_for_broadcast = {
+        room = f"board_{board_id}"
+        payload = {
             'id': new_stroke.id,
-            'user_id': user.id,
-            'board_id': board_id,
+            'user_id': new_stroke.user_id,
+            'points': data['points'],
             'color': new_stroke.color,
             'lineWidth': new_stroke.line_width,
-            'points': data['points'],
-            'temp_id': temp_id # Devolve o ID temporário
+            'board_id': board_id,
+            'temp_id': temp_id 
         }
-        room = f"board_{board_id}"
-        socketio.emit('stroke_received', stroke_data_for_broadcast, to=room) # Envia para todos na sala
         
-        print(f"Traço salvo no BD com ID {new_stroke.id} para a lousa {board_id}")
+        # O `include_self=False` garante que o stroke não seja enviado de volta ao autor.
+        # O cliente que desenhou já tem o traço localmente.
+        emit('stroke_received', payload, room=room, include_self=True)
+
     except Exception as e:
         db.session.rollback()
-        print(f"Erro ao salvar traço no banco de dados: {e}")
+        print(f"Erro ao salvar o traço no banco de dados para a lousa {board_id}: {e}")
 
+@socketio.on('cursor_move')
+def handle_cursor_move(data):
+    """Recebe a posição do cursor e retransmite para outros na mesma sala."""
+    board_id = data.get('board_id')
+    user_email = data.get('user_email')
+    position = data.get('position')
+
+    if not all([board_id, user_email, position]):
+        return
+
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        return
+
+    room = f"board_{board_id}"
+    
+    payload = {
+        'user_id': user.id,
+        'user_name': user.name,
+        'position': position
+    }
+    
+    emit('cursor_update', payload, room=room, include_self=False)
 
 @socketio.on('undo_request')
 def handle_undo(data):
