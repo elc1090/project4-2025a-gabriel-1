@@ -200,31 +200,42 @@ def handle_disconnect():
     sid = request.sid
     print(f"Cliente {sid} desconectado")
 
-    # Se o SID pertencer a um convidado, remove o usuário e todos os seus dados.
+    # Se o SID pertencer a um convidado, remove apenas o usuário, mantendo seus dados.
     if sid in guest_sids:
         user_id_to_delete = guest_sids.pop(sid) # Remove e obtém o ID
-        print(f"SID {sid} pertence a um convidado. Limpando todos os dados para o usuário {user_id_to_delete}...")
+        print(f"SID {sid} pertence a um convidado. Removendo o usuário {user_id_to_delete} mas mantendo seus dados.")
         
         try:
-            # 1. Deletar lousas que o convidado possui. 
-            # A configuração de cascade no modelo Whiteboard cuidará de deletar os traços contidos nessas lousas.
-            Whiteboard.query.filter_by(owner_id=user_id_to_delete).delete(synchronize_session=False)
+            # 1. Encontrar o usuário convidado
+            user_to_delete = User.query.get(user_id_to_delete)
+            if user_to_delete:
+                # 2. Desassociar o usuário de lousas compartilhadas (não as que ele possui)
+                # Isso remove as entradas da tabela de associação `whiteboard_access`.
+                user_to_delete.accessible_whiteboards.clear()
 
-            # 2. Deletar traços restantes do usuário em lousas compartilhadas (que ele não possui).
-            Stroke.query.filter_by(user_id=user_id_to_delete).delete(synchronize_session=False)
-            
-            # 3. Remover as permissões de acesso do usuário.
-            db.session.query(whiteboard_access).filter_by(user_id=user_id_to_delete).delete(synchronize_session=False)
+                # 3. Anular a propriedade das lousas que ele criou.
+                # Em vez de deletar a lousa, apenas definimos o owner_id como NULL ou para um admin.
+                # Por simplicidade aqui, vamos apenas desassociar. O ideal seria ter um usuário "sistema".
+                # Para este caso, não vamos mexer na posse, os traços já ficarão.
+                # A lógica principal é não deletar o usuário que ainda possui lousas.
+                # O mais seguro é apenas remover o usuário se ele não for dono de nenhuma lousa.
+                
+                # Vamos checar se o usuário é dono de alguma lousa.
+                if user_to_delete.owned_whiteboards.count() > 0:
+                    print(f"Usuário convidado {user_id_to_delete} é dono de lousas. Apenas desassociando, sem remover o usuário.")
+                else:
+                     # Se não for dono de nada, pode ser removido com segurança.
+                    db.session.delete(user_to_delete)
+                    print(f"Removendo o registro do usuário convidado {user_id_to_delete}.")
 
-            # 4. Deletar o usuário.
-            User.query.filter_by(id=user_id_to_delete).delete(synchronize_session=False)
-            
-            db.session.commit()
-            print(f"Usuário convidado e todos os seus dados (ID: {user_id_to_delete}) foram removidos com sucesso.")
+                db.session.commit()
+                print(f"Usuário convidado {user_id_to_delete} foi desassociado/removido com sucesso.")
+            else:
+                print(f"Usuário convidado com ID {user_id_to_delete} não encontrado no banco de dados.")
         
         except Exception as e:
             db.session.rollback()
-            print(f"Erro ao tentar remover o usuário convidado {user_id_to_delete}: {e}")
+            print(f"Erro ao tentar limpar o usuário convidado {user_id_to_delete}: {e}")
 
 
 @socketio.on('draw_stroke_event')
