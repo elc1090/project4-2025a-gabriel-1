@@ -458,6 +458,18 @@ function handleMouseMove(event) {
       user_email: userInfo.value.email,
       position: worldCoords
     });
+
+    // If drawing, emit the in-progress stroke here too
+    if (isDrawing) {
+        const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
+        if (activeStroke) {
+            socket.value.emit('drawing_in_progress', {
+                ...activeStroke,
+                board_id: currentBoardId.value
+            });
+        }
+    }
+
     lastEmitTime = now;
   }
 
@@ -480,15 +492,6 @@ function handleMouseMove(event) {
     const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
     if (activeStroke) {
       activeStroke.points.push({ x: worldCoords.x, y: worldCoords.y });
-
-      // Emite o evento de desenho em progresso (throttled com o cursor)
-      if (now - lastEmitTime > emitInterval) {
-          socket.value.emit('drawing_in_progress', {
-              ...activeStroke,
-              board_id: currentBoardId.value
-          });
-      }
-
       redraw();
     }
   } else if (currentTool.value === 'eraser') {
@@ -676,6 +679,18 @@ function handleTouchMove(event) {
         user_email: userInfo.value.email,
         position: worldPoint
       });
+      
+      // If drawing, emit the in-progress stroke here too
+      if (isDrawing) {
+        const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
+        if (activeStroke) {
+            socket.value.emit('drawing_in_progress', {
+                ...activeStroke,
+                board_id: currentBoardId.value
+            });
+        }
+      }
+      
       lastEmitTime = now;
     }
 
@@ -712,15 +727,6 @@ function handleTouchMove(event) {
         const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
         if (activeStroke) {
           activeStroke.points.push(worldPoint);
-          
-          // Emite o evento de desenho em progresso (throttled com o cursor)
-          if (now - lastEmitTime > emitInterval) {
-              socket.value.emit('drawing_in_progress', {
-                  ...activeStroke,
-                  board_id: currentBoardId.value
-              });
-          }
-
           redraw();
         }
       } else if (currentTool.value === 'eraser') {
