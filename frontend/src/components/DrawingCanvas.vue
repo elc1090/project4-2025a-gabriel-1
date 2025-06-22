@@ -246,30 +246,51 @@ onMounted(() => {
     }
   }, 2000);
 
+  socket.value.on('drawing_in_progress', (strokeData) => {
+    if (!strokeData || strokeData.user_id === userInfo.value?.id) return;
+    
+    const existingStrokeIndex = strokes.value.findIndex(s => s.id === strokeData.id);
+    
+    if (existingStrokeIndex !== -1) {
+      // Atualiza o traço temporário existente
+      strokes.value[existingStrokeIndex].points = strokeData.points;
+    } else {
+      // Adiciona um novo traço temporário
+      strokes.value.push(strokeData);
+    }
+    redraw();
+  });
+
   socket.value.on('stroke_received', (strokeData) => {
     if (strokeData.board_id !== currentBoardId.value) return;
 
-    if (strokeData.temp_id && strokeData.user_id === userInfo.value.id) {
+    // Todos os clientes (desenhista e receptores) devem usar o temp_id para encontrar e substituir.
+    if (strokeData.temp_id) {
       const tempStrokeIndex = strokes.value.findIndex(s => s.id === strokeData.temp_id);
+      
       if (tempStrokeIndex !== -1) {
+        // Substitui o traço temporário pelo final e permanente.
         strokes.value[tempStrokeIndex] = {
           id: strokeData.id,
           user_id: strokeData.user_id,
-      points: strokeData.points,
-      color: strokeData.color,
+          points: strokeData.points,
+          color: strokeData.color,
           lineWidth: strokeData.lineWidth,
         };
+        
+        // Lógica específica para o desenhista (limpar o redo stack)
+        if (strokeData.user_id === userInfo.value?.id) {
+            if (redoStack.value.length > 0) {
+                redoStack.value = [];
+            }
+        }
         redraw();
-        return;
+        return; // Finalizado.
       }
     }
     
-    if (strokeData.user_id === userInfo.value?.id) {
-      if (redoStack.value.length > 0) {
-        redoStack.value.pop();
-      }
-    }
-    
+    // Fallback: se o traço temporário não foi encontrado (ex: usuário entrou no meio do desenho),
+    // apenas adiciona o traço final.
     strokes.value.push(strokeData);
     redraw();
   });
@@ -459,6 +480,15 @@ function handleMouseMove(event) {
     const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
     if (activeStroke) {
       activeStroke.points.push({ x: worldCoords.x, y: worldCoords.y });
+
+      // Emite o evento de desenho em progresso (throttled com o cursor)
+      if (now - lastEmitTime > emitInterval) {
+          socket.value.emit('drawing_in_progress', {
+              ...activeStroke,
+              board_id: currentBoardId.value
+          });
+      }
+
       redraw();
     }
   } else if (currentTool.value === 'eraser') {
@@ -682,6 +712,15 @@ function handleTouchMove(event) {
         const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
         if (activeStroke) {
           activeStroke.points.push(worldPoint);
+          
+          // Emite o evento de desenho em progresso (throttled com o cursor)
+          if (now - lastEmitTime > emitInterval) {
+              socket.value.emit('drawing_in_progress', {
+                  ...activeStroke,
+                  board_id: currentBoardId.value
+              });
+          }
+
           redraw();
         }
       } else if (currentTool.value === 'eraser') {

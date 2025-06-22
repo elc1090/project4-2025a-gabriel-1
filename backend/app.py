@@ -303,6 +303,17 @@ def handle_cursor_move(data):
     
     emit('cursor_update', payload, room=room, include_self=False)
 
+@socketio.on('drawing_in_progress')
+def handle_drawing_in_progress(data):
+    """Recebe um traço em andamento e o retransmite para a sala."""
+    board_id = data.get('board_id')
+    if not board_id:
+        return
+    
+    room = f"board_{board_id}"
+    # Retransmite os dados do traço em andamento para todos na sala, exceto o remetente.
+    emit('drawing_in_progress', data, room=room, include_self=False)
+
 @socketio.on('undo_request')
 def handle_undo(data):
     """Desfaz o último traço de um usuário em uma lousa."""
