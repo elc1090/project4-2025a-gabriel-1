@@ -11,15 +11,18 @@ Gabriel Bisognin Moro | Ciência da Computação
 
 ### Descrição do produto
 
-Aplicação web de desenho compartilhado em tempo real, permite que múltiplos usuários desenhem simultaneamente em um canvas digital, visualizando as contribuições uns dos outros instantaneamente.
+Aplicação web de desenho compartilhado em tempo real, permite que múltiplos usuários desenhem simultaneamente em um canvas digital, visualizando as contribuições uns dos outros instantaneamente. Cada usuário pode gerenciar suas próprias lousas, criar novas, deletá-las e compartilhar o acesso com outros.
 
 Funcionalidades principais incluem:
 
-  - Uma tela de desenho interativa com capacidade de arrastar (pan) e aplicar zoom, acessível tanto por mouse quanto por gestos de toque (um dedo para desenhar, dois dedos para zoom/pan).  
-  - Ferramentas de desenho com seleção de cor (através de uma paleta) e espessura do pincel.  
-  - Um menu de contexto customizado, ativado por clique direito no desktop ou toque longo em dispositivos móveis, oferecendo opções para limpar o desenho e resetar a visualização.
+  - Múltiplas Lousas: Usuários logados pelo Google podem criar, deletar e alternar entre diferentes lousas. Cada lousa é um espaço de desenho independente.  
+  - Compartilhamento de Lousa: O dono de uma lousa pode compartilhar o acesso com outros usuários através de seus IDs únicos.
+  - Login Flexível: Autenticação com conta Google ou acesso rápido como visitante.
+  - Telas de desenho interativas com capacidade de arrastar (pan) e aplicar zoom, acessível tanto por mouse quanto por gestos de toque (um dedo para desenhar, dois dedos para zoom/pan).  
+  - Ferramentas de desenho: Seleção de cor (através de uma paleta), espessura do pincel, borracha, capacidade de desfazer e refazer e formas geométricas.  
+  - Menu de Contexto: Um menu acessível com o botão direito (ou toque longo em telas de toque) oferece atalhos para limpar o canvas e resetar a visualização.  
   - Persistência dos desenhos, que são salvos no banco de dados e recarregados quando um usuário acessa ou atualiza a página.
-  - Acesso com login pelo Google e acesso como visitante.
+  - Identificação de Usuário: O ID do usuário fica visível e pode ser copiado facilmente para agilizar o compartilhamento.
 
 
 ### Desenvolvimento
@@ -61,6 +64,7 @@ Houve etapas significativas de depuração e refinamento, especialmente para:
 
 - [Vscode](https://code.visualstudio.com/)   
 - [VScode Live Preview](https://marketplace.visualstudio.com/items?itemName=ms-vscode.live-server)   
+- [Cursor](https://www.cursor.com/)
 
 #### Referências e créditos
 
