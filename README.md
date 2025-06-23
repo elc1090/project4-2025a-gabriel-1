@@ -18,10 +18,12 @@ Funcionalidades principais incluem:
   - Múltiplas Lousas: Usuários logados pelo Google podem criar, deletar e alternar entre diferentes lousas. Cada lousa é um espaço de desenho independente.   
   - Compartilhamento de Lousa: O dono de uma lousa pode compartilhar o acesso com outros usuários através de seus IDs únicos.   
 <img src="preview3.gif" alt="desktop preview" width="720"/>   
+
   - Login Flexível: Autenticação com conta Google ou acesso rápido como visitante.   
   - Telas de desenho interativas com capacidade de arrastar (pan) e aplicar zoom, acessível tanto por mouse quanto por gestos de toque (um dedo para desenhar, dois dedos para zoom/pan).  
   - Ferramentas de desenho: Seleção de cor (através de uma paleta), espessura do pincel, borracha, capacidade de desfazer e refazer e formas geométricas.   
 <img src="preview2.gif" alt="desktop preview" width="720"/>   
+
   - Menu de Contexto: Um menu acessível com o botão direito (ou toque longo em telas de toque) oferece atalhos para limpar o canvas e resetar a visualização.    
   - Persistência dos desenhos, que são salvos no banco de dados e recarregados quando um usuário acessa ou atualiza a página.    
   - Identificação de Usuário: O ID do usuário fica visível e pode ser copiado facilmente para agilizar o compartilhamento.    
