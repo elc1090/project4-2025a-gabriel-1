@@ -97,10 +97,10 @@ const menu = reactive({
   y: 0,
 });
 
-const longPressDuration = 500;
+const longPressDuration = 400;
 let longPressTimer = null;
 let touchStartCoords = {};
-const longPressMoveThreshold = 10;
+const longPressMoveThreshold = 5;
 
 let isMultiTouching = false;
 let potentialDrawingStart = false;
