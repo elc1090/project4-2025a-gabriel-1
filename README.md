@@ -21,7 +21,8 @@ Funcionalidades principais incluem:
 
   - Login Flexível: Autenticação com conta Google ou acesso rápido como visitante.   
   - Telas de desenho interativas com capacidade de arrastar (pan) e aplicar zoom, acessível tanto por mouse quanto por gestos de toque (um dedo para desenhar, dois dedos para zoom/pan).  
-  - Ferramentas de desenho: Seleção de cor (através de uma paleta), espessura do pincel, borracha, capacidade de desfazer e refazer e formas geométricas.   
+  - Ferramentas de desenho: Seleção de cor (através de uma paleta), espessura do pincel, borracha, capacidade de desfazer e refazer e formas geométricas.
+  - Capacidade de ver o cursor dos outros usuários e o desenho sendo criado em tempo real.
 <img src="preview2.gif" alt="desktop preview" width="720"/>   
 
   - Menu de Contexto: Um menu acessível com o botão direito (ou toque longo em telas de toque) oferece atalhos para limpar o canvas e resetar a visualização.    
