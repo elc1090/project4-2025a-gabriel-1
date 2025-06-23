@@ -23,7 +23,6 @@ Funcionalidades principais incluem:
   - Menu de Contexto: Um menu acessível com o botão direito (ou toque longo em telas de toque) oferece atalhos para limpar o canvas e resetar a visualização.  
   - Persistência dos desenhos, que são salvos no banco de dados e recarregados quando um usuário acessa ou atualiza a página.
   - Identificação de Usuário: O ID do usuário fica visível e pode ser copiado facilmente para agilizar o compartilhamento.
-  - É possível ver o cursor dos outros usuários e também ver o desenho sendo feito em tempo real.
 
 
 ### Desenvolvimento

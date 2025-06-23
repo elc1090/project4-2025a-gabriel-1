@@ -392,7 +392,6 @@ watch(userInfo, (newUserInfo) => {
   border: 1px solid #dadce0;
   border-radius: 8px;
   background-color: #fff;
-  color: #202124;
 }
 .menu-footer input:focus {
   outline: none;

@@ -206,26 +206,6 @@ def handle_disconnect():
         print(f"SID {sid} pertence a um convidado. Removendo o usuário {user_id_to_delete} mas mantendo seus dados.")
         
         try:
-<<<<<<< HEAD
-            user_to_delete = User.query.get(user_id_to_delete)
-            if user_to_delete:
-                # Desassocia o usuário de lousas que ele pode acessar, mas não possui.
-                user_to_delete.accessible_whiteboards = []
-
-                # Verifica se o usuário convidado possui dados persistentes.
-                owns_whiteboards = user_to_delete.owned_whiteboards.count() > 0
-                has_strokes = Stroke.query.filter_by(user_id=user_id_to_delete).count() > 0
-
-                if owns_whiteboards or has_strokes:
-                    print(f"Usuário convidado {user_id_to_delete} possui dados. O registro do usuário será mantido.")
-                else:
-                    # Se o convidado não tem dados, é seguro removê-lo.
-                    print(f"Usuário convidado {user_id_to_delete} não possui dados. Removendo o registro do usuário.")
-                    db.session.delete(user_to_delete)
-                
-                db.session.commit()
-                print(f"Limpeza para o usuário convidado {user_id_to_delete} concluída.")
-=======
             # 1. Encontrar o usuário convidado
             user_to_delete = User.query.get(user_id_to_delete)
             if user_to_delete:
@@ -250,7 +230,6 @@ def handle_disconnect():
 
                 db.session.commit()
                 print(f"Usuário convidado {user_id_to_delete} foi desassociado/removido com sucesso.")
->>>>>>> 6ddd6c274e02229aec949ca8e77a83ab26033235
             else:
                 print(f"Usuário convidado com ID {user_id_to_delete} não encontrado no banco de dados.")
         
