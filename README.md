@@ -13,7 +13,7 @@ Gabriel Bisognin Moro | Ciência da Computação
 
 Aplicação web de desenho compartilhado em tempo real, permite que múltiplos usuários desenhem simultaneamente em um canvas digital, visualizando as contribuições uns dos outros instantaneamente. Cada usuário pode gerenciar suas próprias lousas, criar novas, deletá-las e compartilhar o acesso com outros.
 
-Funcionalidades principais incluem:
+#### Funcionalidades principais incluem:
 
   - Múltiplas Lousas: Usuários logados pelo Google podem criar, deletar e alternar entre diferentes lousas. Cada lousa é um espaço de desenho independente.   
   - Compartilhamento de Lousa: O dono de uma lousa pode compartilhar o acesso com outros usuários através de seus IDs únicos.   
