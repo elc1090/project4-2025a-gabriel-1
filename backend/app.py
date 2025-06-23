@@ -206,6 +206,7 @@ def handle_disconnect():
         print(f"SID {sid} pertence a um convidado. Removendo o usuário {user_id_to_delete} mas mantendo seus dados.")
         
         try:
+<<<<<<< HEAD
             user_to_delete = User.query.get(user_id_to_delete)
             if user_to_delete:
                 # Desassocia o usuário de lousas que ele pode acessar, mas não possui.
@@ -224,6 +225,32 @@ def handle_disconnect():
                 
                 db.session.commit()
                 print(f"Limpeza para o usuário convidado {user_id_to_delete} concluída.")
+=======
+            # 1. Encontrar o usuário convidado
+            user_to_delete = User.query.get(user_id_to_delete)
+            if user_to_delete:
+                # 2. Desassociar o usuário de lousas compartilhadas (não as que ele possui)
+                # Isso remove as entradas da tabela de associação `whiteboard_access`.
+                user_to_delete.accessible_whiteboards.clear()
+
+                # 3. Anular a propriedade das lousas que ele criou.
+                # Em vez de deletar a lousa, apenas definimos o owner_id como NULL ou para um admin.
+                # Por simplicidade aqui, vamos apenas desassociar. O ideal seria ter um usuário "sistema".
+                # Para este caso, não vamos mexer na posse, os traços já ficarão.
+                # A lógica principal é não deletar o usuário que ainda possui lousas.
+                # O mais seguro é apenas remover o usuário se ele não for dono de nenhuma lousa.
+                
+                # Vamos checar se o usuário é dono de alguma lousa.
+                if user_to_delete.owned_whiteboards.count() > 0:
+                    print(f"Usuário convidado {user_id_to_delete} é dono de lousas. Apenas desassociando, sem remover o usuário.")
+                else:
+                     # Se não for dono de nada, pode ser removido com segurança.
+                    db.session.delete(user_to_delete)
+                    print(f"Removendo o registro do usuário convidado {user_id_to_delete}.")
+
+                db.session.commit()
+                print(f"Usuário convidado {user_id_to_delete} foi desassociado/removido com sucesso.")
+>>>>>>> 6ddd6c274e02229aec949ca8e77a83ab26033235
             else:
                 print(f"Usuário convidado com ID {user_id_to_delete} não encontrado no banco de dados.")
         
