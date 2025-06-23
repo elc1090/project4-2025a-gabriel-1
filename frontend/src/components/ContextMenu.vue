@@ -1,7 +1,8 @@
 <template>
   <div
+    ref="menuRef"
     class="context-menu"
-    :style="{ top: y + 'px', left: x + 'px' }"
+    :style="menuStyle"
     @click.stop >
     <ul>
       <li @click="emitSelection('clear')">Limpar Desenho</li> <!- TEXTO ALTERADO -->
@@ -32,14 +33,63 @@
 </template>
 
 <script setup>
-import { defineProps, defineEmits } from 'vue';
+import { defineProps, defineEmits, ref, computed, watch } from 'vue';
 
-defineProps({
+const props = defineProps({
   x: Number,
   y: Number,
+  visible: Boolean,
 });
 
 const emit = defineEmits(['select']);
+
+const menuRef = ref(null);
+const position = ref({ x: props.x, y: props.y });
+
+// Estilo computado que será aplicado ao menu
+const menuStyle = computed(() => ({
+  top: `${position.value.y}px`,
+  left: `${position.value.x}px`,
+  visibility: props.visible ? 'visible' : 'hidden',
+}));
+
+// Observa quando as coordenadas ou a visibilidade mudam
+watch([() => props.x, () => props.y, () => props.visible], ([newX, newY, newVisibility]) => {
+  if (newVisibility && menuRef.value) {
+    // Primeiro, torna o menu visível fora da tela para medir
+    menuRef.value.style.visibility = 'hidden';
+    menuRef.value.style.left = '-1000px';
+    menuRef.value.style.top = '-1000px';
+
+    // Força o DOM a atualizar para que possamos obter as dimensões
+    requestAnimationFrame(() => {
+      const menuWidth = menuRef.value.offsetWidth;
+      const menuHeight = menuRef.value.offsetHeight;
+      const windowWidth = window.innerWidth;
+      const windowHeight = window.innerHeight;
+
+      let finalX = newX;
+      let finalY = newY;
+
+      // Ajusta a posição para não sair da tela
+      if (finalX + menuWidth > windowWidth) {
+        finalX = windowWidth - menuWidth - 10;
+      }
+      if (finalY + menuHeight > windowHeight) {
+        finalY = windowHeight - menuHeight - 10;
+      }
+      
+      // Garante que não saia pela esquerda ou topo
+      if (finalX < 10) finalX = 10;
+      if (finalY < 10) finalY = 10;
+
+      position.value = { x: finalX, y: finalY };
+      
+      // Agora, torna o menu visível na posição correta
+      menuRef.value.style.visibility = 'visible';
+    });
+  }
+});
 
 const palette = [ // Paleta de cores (mantendo a última que definimos)
   '#000000', '#FFFFFF', '#EF5350', '#FFCA28',

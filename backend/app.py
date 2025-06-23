@@ -200,31 +200,36 @@ def handle_disconnect():
     sid = request.sid
     print(f"Cliente {sid} desconectado")
 
-    # Se o SID pertencer a um convidado, remove o usuário e todos os seus dados.
+    # Se o SID pertencer a um convidado, remove apenas o usuário, mantendo seus dados.
     if sid in guest_sids:
         user_id_to_delete = guest_sids.pop(sid) # Remove e obtém o ID
-        print(f"SID {sid} pertence a um convidado. Limpando todos os dados para o usuário {user_id_to_delete}...")
+        print(f"SID {sid} pertence a um convidado. Removendo o usuário {user_id_to_delete} mas mantendo seus dados.")
         
         try:
-            # 1. Deletar lousas que o convidado possui. 
-            # A configuração de cascade no modelo Whiteboard cuidará de deletar os traços contidos nessas lousas.
-            Whiteboard.query.filter_by(owner_id=user_id_to_delete).delete(synchronize_session=False)
+            user_to_delete = User.query.get(user_id_to_delete)
+            if user_to_delete:
+                # Desassocia o usuário de lousas que ele pode acessar, mas não possui.
+                user_to_delete.accessible_whiteboards = []
 
-            # 2. Deletar traços restantes do usuário em lousas compartilhadas (que ele não possui).
-            Stroke.query.filter_by(user_id=user_id_to_delete).delete(synchronize_session=False)
-            
-            # 3. Remover as permissões de acesso do usuário.
-            db.session.query(whiteboard_access).filter_by(user_id=user_id_to_delete).delete(synchronize_session=False)
+                # Verifica se o usuário convidado possui dados persistentes.
+                owns_whiteboards = user_to_delete.owned_whiteboards.count() > 0
+                has_strokes = Stroke.query.filter_by(user_id=user_id_to_delete).count() > 0
 
-            # 4. Deletar o usuário.
-            User.query.filter_by(id=user_id_to_delete).delete(synchronize_session=False)
-            
-            db.session.commit()
-            print(f"Usuário convidado e todos os seus dados (ID: {user_id_to_delete}) foram removidos com sucesso.")
+                if owns_whiteboards or has_strokes:
+                    print(f"Usuário convidado {user_id_to_delete} possui dados. O registro do usuário será mantido.")
+                else:
+                    # Se o convidado não tem dados, é seguro removê-lo.
+                    print(f"Usuário convidado {user_id_to_delete} não possui dados. Removendo o registro do usuário.")
+                    db.session.delete(user_to_delete)
+                
+                db.session.commit()
+                print(f"Limpeza para o usuário convidado {user_id_to_delete} concluída.")
+            else:
+                print(f"Usuário convidado com ID {user_id_to_delete} não encontrado no banco de dados.")
         
         except Exception as e:
             db.session.rollback()
-            print(f"Erro ao tentar remover o usuário convidado {user_id_to_delete}: {e}")
+            print(f"Erro ao tentar limpar o usuário convidado {user_id_to_delete}: {e}")
 
 
 @socketio.on('draw_stroke_event')
@@ -260,23 +265,59 @@ def handle_draw_stroke_event(data):
         db.session.add(new_stroke)
         db.session.commit()
 
-        stroke_data_for_broadcast = {
+        room = f"board_{board_id}"
+        payload = {
             'id': new_stroke.id,
-            'user_id': user.id,
-            'board_id': board_id,
+            'user_id': new_stroke.user_id,
+            'points': data['points'],
             'color': new_stroke.color,
             'lineWidth': new_stroke.line_width,
-            'points': data['points'],
-            'temp_id': temp_id # Devolve o ID temporário
+            'board_id': board_id,
+            'temp_id': temp_id 
         }
-        room = f"board_{board_id}"
-        socketio.emit('stroke_received', stroke_data_for_broadcast, to=room) # Envia para todos na sala
         
-        print(f"Traço salvo no BD com ID {new_stroke.id} para a lousa {board_id}")
+        # O `include_self=False` garante que o stroke não seja enviado de volta ao autor.
+        # O cliente que desenhou já tem o traço localmente.
+        emit('stroke_received', payload, room=room, include_self=True)
+
     except Exception as e:
         db.session.rollback()
-        print(f"Erro ao salvar traço no banco de dados: {e}")
+        print(f"Erro ao salvar o traço no banco de dados para a lousa {board_id}: {e}")
 
+@socketio.on('cursor_move')
+def handle_cursor_move(data):
+    """Recebe a posição do cursor e retransmite para outros na mesma sala."""
+    board_id = data.get('board_id')
+    user_email = data.get('user_email')
+    position = data.get('position')
+
+    if not all([board_id, user_email, position]):
+        return
+
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        return
+
+    room = f"board_{board_id}"
+    
+    payload = {
+        'user_id': user.id,
+        'user_name': user.name,
+        'position': position
+    }
+    
+    emit('cursor_update', payload, room=room, include_self=False)
+
+@socketio.on('drawing_in_progress')
+def handle_drawing_in_progress(data):
+    """Recebe um traço em andamento e o retransmite para a sala."""
+    board_id = data.get('board_id')
+    if not board_id:
+        return
+    
+    room = f"board_{board_id}"
+    # Retransmite os dados do traço em andamento para todos na sala, exceto o remetente.
+    emit('drawing_in_progress', data, room=room, include_self=False)
 
 @socketio.on('undo_request')
 def handle_undo(data):

@@ -220,7 +220,7 @@ watch(userInfo, (newUserInfo) => {
   border-radius: 12px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.15);
   width: 320px;
-  max-height: 90vh;
+  max-height: 85vh;
   display: flex;
   flex-direction: column;
   color: #202124;
@@ -392,6 +392,7 @@ watch(userInfo, (newUserInfo) => {
   border: 1px solid #dadce0;
   border-radius: 8px;
   background-color: #fff;
+  color: #202124;
 }
 .menu-footer input:focus {
   outline: none;
@@ -416,5 +417,47 @@ watch(userInfo, (newUserInfo) => {
   background-color: #dadce0;
   color: #80868b;
   cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .menu-content {
+    padding: 8px 0;
+    max-height: 80vh;
+  }
+
+  .menu-header {
+    padding: 8px 12px;
+  }
+
+  .user-avatar {
+    width: 32px;
+    height: 32px;
+  }
+
+  .user-name, .user-id-value {
+    font-size: 0.9em;
+  }
+  
+  ul li span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px; /* Ajuste conforme necessário */
+  }
+
+  li {
+    padding: 9px 12px;
+  }
+
+  .boards-title {
+    font-size: 1em;
+    padding: 4px 12px;
+  }
+
+  .menu-footer {
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 12px;
+  }
 }
 </style> 

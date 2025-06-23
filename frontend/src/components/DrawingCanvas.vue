@@ -41,7 +41,7 @@
     class="viewport-canvas"
   ></canvas>
   <ContextMenu
-    v-if="menu.visible"
+    :visible="menu.visible"
     :x="menu.x"
     :y="menu.y"
     @select="handleMenuSelection"
@@ -110,6 +110,8 @@ const initialGestureInfo = reactive({
   pinchDistance: 0,
   worldMidpoint: { x: 0, y: 0 },
 });
+
+const otherCursors = reactive({});
 
 const currentTool = ref('pencil');
 const eraserSize = 20; // Raio da borracha em pixels do mundo
@@ -219,30 +221,76 @@ onMounted(() => {
     redraw();
   });
 
+  socket.value.on('cursor_update', (data) => {
+    if (data.user_id !== userInfo.value?.id) {
+      otherCursors[data.user_id] = {
+        position: data.position,
+        name: data.user_name,
+        timestamp: Date.now()
+      };
+      redraw();
+    }
+  });
+
+  setInterval(() => {
+    const now = Date.now();
+    let changed = false;
+    for (const userId in otherCursors) {
+      if (now - otherCursors[userId].timestamp > 10000) { // 10 segundos de timeout
+        delete otherCursors[userId];
+        changed = true;
+      }
+    }
+    if (changed) {
+      redraw();
+    }
+  }, 2000);
+
+  socket.value.on('drawing_in_progress', (strokeData) => {
+    if (!strokeData || strokeData.user_id === userInfo.value?.id) return;
+    
+    const existingStrokeIndex = strokes.value.findIndex(s => s.id === strokeData.id);
+    
+    if (existingStrokeIndex !== -1) {
+      // Atualiza o traço temporário existente
+      strokes.value[existingStrokeIndex].points = strokeData.points;
+    } else {
+      // Adiciona um novo traço temporário
+      strokes.value.push(strokeData);
+    }
+    redraw();
+  });
+
   socket.value.on('stroke_received', (strokeData) => {
     if (strokeData.board_id !== currentBoardId.value) return;
 
-    if (strokeData.temp_id && strokeData.user_id === userInfo.value.id) {
+    // Todos os clientes (desenhista e receptores) devem usar o temp_id para encontrar e substituir.
+    if (strokeData.temp_id) {
       const tempStrokeIndex = strokes.value.findIndex(s => s.id === strokeData.temp_id);
+      
       if (tempStrokeIndex !== -1) {
+        // Substitui o traço temporário pelo final e permanente.
         strokes.value[tempStrokeIndex] = {
           id: strokeData.id,
           user_id: strokeData.user_id,
-      points: strokeData.points,
-      color: strokeData.color,
+          points: strokeData.points,
+          color: strokeData.color,
           lineWidth: strokeData.lineWidth,
         };
+        
+        // Lógica específica para o desenhista (limpar o redo stack)
+        if (strokeData.user_id === userInfo.value?.id) {
+            if (redoStack.value.length > 0) {
+                redoStack.value = [];
+            }
+        }
         redraw();
-        return;
+        return; // Finalizado.
       }
     }
     
-    if (strokeData.user_id === userInfo.value?.id) {
-      if (redoStack.value.length > 0) {
-        redoStack.value.pop();
-      }
-    }
-    
+    // Fallback: se o traço temporário não foi encontrado (ex: usuário entrou no meio do desenho),
+    // apenas adiciona o traço final.
     strokes.value.push(strokeData);
     redraw();
   });
@@ -305,52 +353,60 @@ function resetView() {
   const scaleX = viewportState.width / WORLD_WIDTH;
   const scaleY = viewportState.height / WORLD_HEIGHT;
   viewportState.scale = Math.min(scaleX, scaleY) * 0.9;
-  viewportState.offsetX = (viewportState.width - WORLD_WIDTH * viewportState.scale) / 2;
-  viewportState.offsetY = (viewportState.height - WORLD_HEIGHT * viewportState.scale) / 2;
+  
+  // Centraliza o mundo no viewport
+  viewportState.offsetX = (WORLD_WIDTH / 2) - (viewportState.width / 2 / viewportState.scale);
+  viewportState.offsetY = (WORLD_HEIGHT / 2) - (viewportState.height / 2 / viewportState.scale);
   redraw();
 }
 
 function redraw() {
   if (!ctx) return;
-  const canvas = viewportCanvasRef.value;
-  ctx.fillStyle = '#777777'; 
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  ctx.clearRect(0, 0, viewportState.width, viewportState.height);
+
   ctx.save();
-  ctx.translate(viewportState.offsetX, viewportState.offsetY);
   ctx.scale(viewportState.scale, viewportState.scale);
+  ctx.translate(-viewportState.offsetX, -viewportState.offsetY);
+
+  // Desenha o fundo do "mundo"
   ctx.fillStyle = WORLD_BACKGROUND_COLOR;
   ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-  ctx.save();
+  
+  // Desenha todos os traços
+  strokes.value.forEach(drawStroke);
+
+  // Desenha os cursores de outros usuários
+  drawOtherCursors();
+
+  ctx.restore();
+}
+
+function drawStroke(stroke) {
+  if (stroke.points.length < 2) return;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
   ctx.beginPath();
-  ctx.rect(0, 0, WORLD_WIDTH, WORLD_HEIGHT); 
-  ctx.clip(); 
-  strokes.value.forEach(stroke => {
-    if (stroke.points.length < 2) return;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    ctx.strokeStyle = stroke.color;
-    ctx.lineWidth = stroke.lineWidth; 
-    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-    stroke.points.forEach(point => ctx.lineTo(point.x, point.y));
-    ctx.stroke();
-  });
-  ctx.restore(); 
-  ctx.restore(); 
+  ctx.strokeStyle = stroke.color;
+  ctx.lineWidth = stroke.lineWidth; 
+  ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+  stroke.points.forEach(point => ctx.lineTo(point.x, point.y));
+  ctx.stroke();
 }
 
 function screenToWorldCoordinates(screenX, screenY) {
   return {
-    x: (screenX - viewportState.offsetX) / viewportState.scale,
-    y: (screenY - viewportState.offsetY) / viewportState.scale,
+    x: screenX / viewportState.scale + viewportState.offsetX,
+    y: screenY / viewportState.scale + viewportState.offsetY,
   };
 }
 
 function getCanvasCoordinates(event) {
   const rect = viewportCanvasRef.value.getBoundingClientRect();
-  const screenX = event.clientX - rect.left;
-  const screenY = event.clientY - rect.top;
-  return screenToWorldCoordinates(screenX, screenY);
+  return {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
+  };
 }
 
 function handleMouseDown(event) {
@@ -362,13 +418,14 @@ function handleMouseDown(event) {
     redoStack.value = [];
 
     const { x, y } = getCanvasCoordinates(event);
+    const worldPoint = screenToWorldCoordinates(x, y);
     
     currentTempStrokeId = 'temp_' + Date.now();
 
     const newStroke = {
       id: currentTempStrokeId,
       user_id: userInfo.value.id,
-      points: [{ x, y }],
+      points: [worldPoint],
       color: drawingSettings.color,
       lineWidth: drawingSettings.lineWidth,
       is_temp: true,
@@ -380,55 +437,77 @@ function handleMouseDown(event) {
   else if (event.button === 1) {
     event.preventDefault();
     viewportState.isPanning = true;
-    viewportState.lastPanX = event.clientX;
-    viewportState.lastPanY = event.clientY;
+    const { x, y } = getCanvasCoordinates(event);
+    viewportState.lastPanX = x;
+    viewportState.lastPanY = y;
   }
 }
 
+let lastEmitTime = 0;
+const emitInterval = 50; // Throttling interval for cursor emitting
+
 function handleMouseMove(event) {
+  const { x: screenX, y: screenY } = getCanvasCoordinates(event);
+  const worldCoords = screenToWorldCoordinates(screenX, screenY);
+
+  // Emit cursor position throttled
+  const now = Date.now();
+  if (socket.value && socket.value.connected && now - lastEmitTime > emitInterval) {
+    socket.value.emit('cursor_move', {
+      board_id: currentBoardId.value,
+      user_email: userInfo.value.email,
+      position: worldCoords
+    });
+
+    // If drawing, emit the in-progress stroke here too
+    if (isDrawing) {
+        const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
+        if (activeStroke) {
+            socket.value.emit('drawing_in_progress', {
+                ...activeStroke,
+                board_id: currentBoardId.value
+            });
+        }
+    }
+
+    lastEmitTime = now;
+  }
+
+  // Panning logic
   if (viewportState.isPanning) {
-    const dx = event.clientX - viewportState.lastPanX;
-    const dy = event.clientY - viewportState.lastPanY;
-    viewportState.offsetX += dx;
-    viewportState.offsetY += dy;
-    viewportState.lastPanX = event.clientX;
-    viewportState.lastPanY = event.clientY;
+    const dx = screenX - viewportState.lastPanX;
+    const dy = screenY - viewportState.lastPanY;
+    viewportState.offsetX -= dx / viewportState.scale;
+    viewportState.offsetY -= dy / viewportState.scale;
+    viewportState.lastPanX = screenX;
+    viewportState.lastPanY = screenY;
     redraw();
     return;
   }
 
   if (!isDrawing) return;
 
+  // Drawing/Erasing logic
   if (currentTool.value === 'pencil' || currentTool.value === 'shapes') {
     const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
     if (activeStroke) {
-      const { x, y } = getCanvasCoordinates(event);
-      activeStroke.points.push({ x, y });
+      activeStroke.points.push({ x: worldCoords.x, y: worldCoords.y });
       redraw();
     }
   } else if (currentTool.value === 'eraser') {
-    const { x: cursorX, y: cursorY } = getCanvasCoordinates(event);
-    
-    // Itera sobre uma cópia para evitar problemas ao modificar o array
     [...strokes.value].forEach(stroke => {
-      // Ignora traços temporários
       if (stroke.is_temp) return;
-
       const isHit = stroke.points.some(point => {
-        const distance = Math.hypot(point.x - cursorX, point.y - cursorY);
-        return distance < eraserSize / viewportState.scale; // Ajusta o tamanho da borracha com o zoom
+        const distance = Math.hypot(point.x - worldCoords.x, point.y - worldCoords.y);
+        return distance < eraserSize;
       });
-
       if (isHit) {
-        // Remove o traço da UI imediatamente (UI Otimista)
         const index = strokes.value.findIndex(s => s.id === stroke.id);
         if (index !== -1) {
-          strokes.value.splice(index, 1);
-        redraw();
-
-          // Emite o evento para o servidor deletar permanentemente
+          const removedStroke = strokes.value.splice(index, 1)[0];
+          redraw();
           socket.value.emit('erase_stroke', {
-            stroke_id: stroke.id,
+            stroke_id: removedStroke.id,
             board_id: currentBoardId.value
           });
         }
@@ -438,16 +517,13 @@ function handleMouseMove(event) {
 }
 
 function handleMouseUp(event) {
-  // Finaliza o desenho com o pincel ou formas
   if (event.button === 0 && isDrawing && (currentTool.value === 'pencil' || currentTool.value === 'shapes')) {
     isDrawing = false;
     const finalStroke = strokes.value.find(s => s.id === currentTempStrokeId);
 
     if (!finalStroke) return;
 
-    // Tenta reconhecer a forma antes de finalizar, APENAS se a ferramenta for 'shapes'
     if (currentTool.value === 'shapes' && finalStroke.points.length > 4) { 
-        // 1. Calcular um epsilon dinâmico com base no tamanho do traço
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         finalStroke.points.forEach(p => {
             minX = Math.min(minX, p.x);
@@ -458,37 +534,28 @@ function handleMouseUp(event) {
         const width = maxX - minX;
         const height = maxY - minY;
         const diagonal = Math.sqrt(width*width + height*height);
-        // Epsilon é 4% da diagonal, com um valor mínimo para não simplificar demais formas pequenas.
         const epsilon = Math.max(2.5, diagonal * 0.04);
         console.log(`Dynamic epsilon: ${epsilon.toFixed(2)} (based on diagonal ${diagonal.toFixed(2)})`);
         
-        // 2. Simplificar o traço com RDP usando o epsilon dinâmico
         const simplifiedPoints = rdp(finalStroke.points, epsilon);
         console.log(`Original points: ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
 
-        // 3. Analisar a forma com base nos seus pontos simplificados
         const shape = analyzeShape(simplifiedPoints);
 
         if (shape.name !== 'unknown' && shape.confidence > 0.80) {
             console.log(`Recognized as ${shape.name} with confidence ${shape.confidence.toFixed(2)}`);
-            // Remove o traço original desenhado
-            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-            if (index !== -1) {
-                strokes.value.splice(index, 1);
+            const perfectPoints = generatePerfectShapePoints(shape.name, finalStroke, simplifiedPoints);
+            if (perfectPoints.length > 0) {
+              finalStroke.points = perfectPoints;
+              redraw();
             }
-            // Cria a forma perfeita
-            createPerfectShape(shape.name, finalStroke, simplifiedPoints);
-            currentTempStrokeId = null;
-            return; // Encerra aqui para não criar o traço normal
         }
     }
 
-    // Se a ferramenta for 'pencil' ou se a forma não for reconhecida, finaliza como um traço normal
     finalizeStroke(finalStroke);
     currentTempStrokeId = null;
   }
   
-  // Finaliza a ação da borracha
   if (event.button === 0 && isDrawing && currentTool.value === 'eraser') {
     isDrawing = false;
   }
@@ -510,20 +577,24 @@ function handleMouseOut(event) {
 function handleWheel(event) {
   event.preventDefault();
   menu.visible = false;
-  const scaleAmountFactor = 1.1;
-  const mouseX_view = event.offsetX;
-  const mouseY_view = event.offsetY;
-  const worldP_before = screenToWorldCoordinates(mouseX_view, mouseY_view);
+
+  const scaleAmount = 1.1;
+  const screenPoint = getCanvasCoordinates(event);
+  const worldPointBeforeZoom = screenToWorldCoordinates(screenPoint.x, screenPoint.y);
+
   let newScale = viewportState.scale;
   if (event.deltaY < 0) {
-    newScale *= scaleAmountFactor;
+    newScale *= scaleAmount;
   } else {
-    newScale /= scaleAmountFactor;
+    newScale /= scaleAmount;
   }
-  newScale = Math.max(0.05, Math.min(newScale, 20));
+  newScale = Math.max(0.1, Math.min(newScale, 20)); // Limita o zoom
   viewportState.scale = newScale;
-  viewportState.offsetX = mouseX_view - worldP_before.x * viewportState.scale;
-  viewportState.offsetY = mouseY_view - worldP_before.y * viewportState.scale;
+
+  const worldPointAfterZoom = screenToWorldCoordinates(screenPoint.x, screenPoint.y);
+  viewportState.offsetX += worldPointBeforeZoom.x - worldPointAfterZoom.x;
+  viewportState.offsetY += worldPointBeforeZoom.y - worldPointAfterZoom.y;
+
   redraw();
 }
 
@@ -550,7 +621,6 @@ function handleTouchStart(event) {
   menu.visible = false;
   const touches = event.touches;
   
-  // Início de um gesto com um dedo
   if (touches.length === 1 && !isMultiTouching) {
     potentialDrawingStart = true;
     const touch = touches[0];
@@ -563,22 +633,20 @@ function handleTouchStart(event) {
       }
       longPressTimer = null;
     }, longPressDuration);
-  
-  // Início de um gesto com múltiplos dedos (ou transição de 1 para 2+)
+
   } else if (touches.length >= 2) {
     clearTimeout(longPressTimer);
     longPressTimer = null;
     potentialDrawingStart = false;
     
-    // Se um desenho estava em progresso, aborte-o.
     if (isDrawing) {
         const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
         if (index !== -1) strokes.value.splice(index, 1);
         currentTempStrokeId = null;
         redraw();
-        isDrawing = false;
+    isDrawing = false; 
     }
-    
+
     isMultiTouching = true;
     const t1 = touches[0];
     const t2 = touches[1];
@@ -598,6 +666,31 @@ function handleTouchMove(event) {
 
   if (touches.length === 1 && !isMultiTouching) {
     const touch = touches[0];
+    const screenPoint = getCanvasCoordinates(touch);
+    const worldPoint = screenToWorldCoordinates(screenPoint.x, screenPoint.y);
+
+    // Emit cursor position throttled
+    const now = Date.now();
+    if (socket.value && socket.value.connected && now - lastEmitTime > emitInterval) {
+      socket.value.emit('cursor_move', {
+        board_id: currentBoardId.value,
+        user_email: userInfo.value.email,
+        position: worldPoint
+      });
+      
+      // If drawing, emit the in-progress stroke here too
+      if (isDrawing) {
+        const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
+        if (activeStroke) {
+            socket.value.emit('drawing_in_progress', {
+                ...activeStroke,
+                board_id: currentBoardId.value
+            });
+        }
+      }
+      
+      lastEmitTime = now;
+    }
 
     if (potentialDrawingStart) {
       const deltaX = touch.clientX - touchStartCoords.x;
@@ -612,12 +705,11 @@ function handleTouchMove(event) {
            potentialDrawingStart = false;
            
            redoStack.value = [];
-           const { x, y } = getCanvasCoordinates(touch);
            currentTempStrokeId = 'temp_' + Date.now();
            const newStroke = {
                 id: currentTempStrokeId,
                 user_id: userInfo.value.id,
-                points: [{ x, y }],
+                points: [worldPoint],
             color: drawingSettings.color,
             lineWidth: drawingSettings.lineWidth,
                 is_temp: true,
@@ -632,17 +724,15 @@ function handleTouchMove(event) {
       if (currentTool.value === 'pencil' || currentTool.value === 'shapes') {
         const activeStroke = strokes.value.find(s => s.id === currentTempStrokeId);
         if (activeStroke) {
-          const { x, y } = getCanvasCoordinates(touch);
-          activeStroke.points.push({ x, y });
+          activeStroke.points.push(worldPoint);
           redraw();
         }
       } else if (currentTool.value === 'eraser') {
-        const { x: cursorX, y: cursorY } = getCanvasCoordinates(touch);
         [...strokes.value].forEach(stroke => {
           if (stroke.is_temp) return;
           const isHit = stroke.points.some(point => {
-            const distance = Math.hypot(point.x - cursorX, point.y - cursorY);
-            return distance < eraserSize / viewportState.scale;
+            const distance = Math.hypot(point.x - worldPoint.x, point.y - worldPoint.y);
+            return distance < eraserSize;
           });
           if (isHit) {
             const index = strokes.value.findIndex(s => s.id === stroke.id);
@@ -662,25 +752,25 @@ function handleTouchMove(event) {
     const t1 = touches[0];
     const t2 = touches[1];
     
-    const rect = viewportCanvasRef.value.getBoundingClientRect();
-    const currentScreenMidX = (t1.clientX - rect.left + t2.clientX - rect.left) / 2;
-    const currentScreenMidY = (t1.clientY - rect.top + t2.clientY - rect.top) / 2;
-    
-    viewportState.offsetX = currentScreenMidX - initialGestureInfo.worldMidpoint.x * viewportState.scale;
-    viewportState.offsetY = currentScreenMidY - initialGestureInfo.worldMidpoint.y * viewportState.scale;
-
     const currentPinchDistance = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
     let scaleFactor = 1;
     if (initialGestureInfo.pinchDistance > 0) {
-      scaleFactor = currentPinchDistance / initialGestureInfo.pinchDistance;
+        scaleFactor = currentPinchDistance / initialGestureInfo.pinchDistance;
     }
-    let newScale = viewportState.scale * scaleFactor;
-    newScale = Math.max(0.1, Math.min(newScale, 20));
-    
-    viewportState.offsetX += (initialGestureInfo.worldMidpoint.x * viewportState.scale) - (initialGestureInfo.worldMidpoint.x * newScale);
-    viewportState.offsetY += (initialGestureInfo.worldMidpoint.y * viewportState.scale) - (initialGestureInfo.worldMidpoint.y * newScale);
-    viewportState.scale = newScale;
+    const newScale = Math.max(0.1, Math.min(viewportState.scale * scaleFactor, 20));
 
+    const rect = viewportCanvasRef.value.getBoundingClientRect();
+    const currentScreenMidX = (t1.clientX - rect.left + t2.clientX - rect.left) / 2;
+    const currentScreenMidY = (t1.clientY - rect.top + t2.clientY - rect.top) / 2;
+    const worldMidpointAfterZoom = {
+        x: currentScreenMidX / newScale + viewportState.offsetX,
+        y: currentScreenMidY / newScale + viewportState.offsetY
+    };
+    
+    viewportState.offsetX += initialGestureInfo.worldMidpoint.x - worldMidpointAfterZoom.x;
+    viewportState.offsetY += initialGestureInfo.worldMidpoint.y - worldMidpointAfterZoom.y;
+    viewportState.scale = newScale;
+    
     initialGestureInfo.pinchDistance = currentPinchDistance;
     initialGestureInfo.worldMidpoint = screenToWorldCoordinates(currentScreenMidX, currentScreenMidY);
 
@@ -702,9 +792,7 @@ function handleTouchEnd(event) {
         return;
     }
 
-    // Tenta reconhecer a forma, APENAS se a ferramenta for 'shapes'
     if (currentTool.value === 'shapes' && finalStroke.points.length > 4) {
-        // 1. Calcular um epsilon dinâmico com base no tamanho do traço
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         finalStroke.points.forEach(p => {
             minX = Math.min(minX, p.x);
@@ -715,34 +803,25 @@ function handleTouchEnd(event) {
         const width = maxX - minX;
         const height = maxY - minY;
         const diagonal = Math.sqrt(width*width + height*height);
-        // Epsilon é 4% da diagonal, com um valor mínimo para não simplificar demais formas pequenas.
         const epsilon = Math.max(2.5, diagonal * 0.04);
         console.log(`Dynamic epsilon (Touch): ${epsilon.toFixed(2)} (based on diagonal ${diagonal.toFixed(2)})`);
         
-        // 2. Simplificar o traço com RDP usando o epsilon dinâmico
         const simplifiedPoints = rdp(finalStroke.points, epsilon);
         console.log(`Original points (Touch): ${finalStroke.points.length}, Simplified to: ${simplifiedPoints.length}`);
 
         const shape = analyzeShape(simplifiedPoints);
-        if (shape.name !== 'unknown' && shape.confidence > 0.80) { // Limiar reduzido de 0.85 para 0.80
+        if (shape.name !== 'unknown' && shape.confidence > 0.80) {
             console.log(`Recognized as ${shape.name} (Touch) with confidence ${shape.confidence.toFixed(2)}`);
-            // Remove o traço original
-            const index = strokes.value.findIndex(s => s.id === currentTempStrokeId);
-            if (index !== -1) {
-              strokes.value.splice(index, 1);
+            const perfectPoints = generatePerfectShapePoints(shape.name, finalStroke, simplifiedPoints);
+            if (perfectPoints.length > 0) {
+              finalStroke.points = perfectPoints;
             }
-            createPerfectShape(shape.name, finalStroke, simplifiedPoints);
-            isDrawing = false;
-            currentTempStrokeId = null;
-            return; // Impede que o traço original seja enviado
         }
     }
     
-    // Se a ferramenta for 'pencil' ou a forma não for reconhecida, finaliza o traço
     finalizeStroke(finalStroke);
   }
   
-  // Limpa o estado com base nos toques restantes para transições suaves
   if (event.touches.length < 2) {
     isMultiTouching = false;
   }
@@ -887,24 +966,21 @@ function getBoundingBox(points) {
     return { cx, cy, width, height };
 }
 
-// Função que cria e emite a forma perfeita
-const createPerfectShape = (shapeName, originalStroke, simplifiedPoints) => {
+// Renamed from createPerfectShape, this function now only returns the points.
+function generatePerfectShapePoints(shapeName, originalStroke, simplifiedPoints) {
     let perfectPoints = [];
     switch (shapeName) {
         case 'line':
-            // CORRETO: Usa o ponto inicial e final reais do traço do usuário.
             perfectPoints = [ 
                 { x: originalStroke.points[0].x, y: originalStroke.points[0].y },
                 { x: originalStroke.points[originalStroke.points.length - 1].x, y: originalStroke.points[originalStroke.points.length - 1].y }
             ];
       break;
         case 'circle':
-            // CORRETO: Usa o bounding box para criar um círculo inscrito.
             const { cx, cy, width, height } = getBoundingBox(originalStroke.points);
             perfectPoints = createPolygon(32, cx, cy, Math.min(width, height) / 2);
             break;
         case 'rectangle':
-            // NOVO: Regulariza os vértices para criar um retângulo perfeito, mas rotacionado.
             const vertices = simplifiedPoints.slice(0, 4); // Pega os 4 vértices principais
 
             if (vertices.length === 4) {
@@ -943,33 +1019,12 @@ const createPerfectShape = (shapeName, originalStroke, simplifiedPoints) => {
             }
             break;
         case 'triangle':
-            // Usa os 3 vértices simplificados para preservar a rotação/forma.
             const triVertices = simplifiedPoints.slice(0, 3);
             perfectPoints = [...triVertices, triVertices[0]]; // Fecha a forma
             break;
     }
 
-    if (perfectPoints.length === 0) return;
-
-    const newStrokeId = 'temp_' + Date.now();
-    const perfectStroke = {
-        id: newStrokeId,
-        user_id: userInfo.value.id,
-        points: perfectPoints,
-        color: originalStroke.color,
-        lineWidth: originalStroke.lineWidth,
-    };
-
-    strokes.value.push(perfectStroke);
-
-    socket.value.emit('draw_stroke_event', {
-        board_id: currentBoardId.value,
-        user_email: userInfo.value?.email,
-        points: perfectStroke.points,
-        color: perfectStroke.color,
-        lineWidth: perfectStroke.lineWidth,
-        temp_id: newStrokeId,
-    });
+    return perfectPoints;
 };
 
 // Funções auxiliares para criar formas geométricas (usadas por createPerfectShape)
@@ -1104,6 +1159,66 @@ function analyzeShape(points) {
 
     return { name: 'unknown', confidence: 0 };
 }
+
+function worldToViewport(worldX, worldY) {
+  const viewportX = (worldX - viewportState.offsetX) * viewportState.scale;
+  const viewportY = (worldY - viewportState.offsetY) * viewportState.scale;
+  return { x: viewportX, y: viewportY };
+}
+
+function stringToColor(str) {
+  if (!str) return '#000000';
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  let color = '#';
+  for (let i = 0; i < 3; i++) {
+    let value = (hash >> (i * 8)) & 0xFF;
+    color += ('00' + value.toString(16)).substr(-2);
+  }
+  return color;
+}
+
+function drawOtherCursors() {
+  for (const userId in otherCursors) {
+    const cursor = otherCursors[userId];
+    const { x, y } = cursor.position;
+    const name = cursor.name;
+
+    const userColor = stringToColor(userId);
+    ctx.fillStyle = userColor;
+
+    // Draw cursor icon
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(12, 18);
+    ctx.lineTo(8, 19);
+    ctx.lineTo(0, 14);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Draw name
+    const maxNameLength = 20;
+    const displayName = name.length > maxNameLength ? name.substring(0, maxNameLength) + '...' : name;
+
+    ctx.font = '14px Arial';
+    ctx.fillStyle = 'black';
+    ctx.shadowColor = 'white';
+    ctx.shadowBlur = 3;
+    ctx.fillText(displayName, x + 16, y + 28);
+    ctx.shadowBlur = 0;
+  }
+}
+
+function startDrawing(worldX, worldY) {
+  if (isDrawing) return;
+  isDrawing = true;
+  // ... existing code ...
+}
 </script>
 
 <style scoped>
@@ -1166,7 +1281,7 @@ function analyzeShape(points) {
 
 .viewport-canvas {
   border: 1px solid #505050;
-  background-color: #f0f0f0;
+  background-color:rgb(255, 255, 255);
   display: block;
   touch-action: none; /* Previne o scroll do navegador em touch screens */
 }
@@ -1182,11 +1297,16 @@ function analyzeShape(points) {
     width: auto;
   }
 
+  :deep(.whiteboard-menu-wrapper) {
+    position: static; /* Permite que o menu se posicione em relação à viewport */
+  }
+
   :deep(.menu-content) {
-    /* Reposiciona o menu para abrir para baixo, centralizado */
-    top: calc(100% + 12px);
+    position: fixed; /* Posicionamento relativo à janela do navegador */
+    top: 80px; /* Distância do topo para aparecer abaixo da topbar */
     left: 50%;
     transform: translateX(-50%);
+    max-width: calc(100vw - 32px); /* Garante que não saia da tela */
   }
 }
 </style>
